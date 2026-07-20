@@ -26,9 +26,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 import config
-from app import embeddings, ingest, pageviews, stats, storage, topics, umap_space
+from app import (embeddings, ingest, network, pageviews, stats, storage,
+                 topics, umap_space)
 
 
 def create_app(
@@ -134,6 +136,17 @@ def create_app(
     @app.get("/map")
     def map_points(conn=Depends(get_db)):
         return storage.get_map_points(conn)
+
+    @app.get("/network")
+    def network_graph(
+        gap: int = Query(network.DEFAULT_GAP_S, ge=1), conn=Depends(get_db)
+    ):
+        return network.graph_metrics(conn, gap)
+
+    @app.get("/network/view", response_class=HTMLResponse)
+    def network_view():
+        page = Path(__file__).parent / "static" / "network.html"
+        return page.read_text(encoding="utf-8")
 
     @app.get("/pages/{title:path}")
     def page_detail(title: str, conn=Depends(get_db)):

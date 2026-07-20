@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Wikipedia Wrapped - reading network</title>
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #cy { width: 100vw; height: 100vh; }
+  #info { position: fixed; top: 10px; left: 10px; background: #fffc;
+          padding: 8px 12px; border-radius: 6px; font-size: 13px;
+          max-width: 340px; box-shadow: 0 1px 4px #0003; }
+</style>
+</head>
+<body>
+<div id="cy"></div>
+<div id="info">Loading network... (drag to pan, scroll to zoom, click a node
+for its metrics)</div>
+<script>
+const TOPIC_COLORS = {};
+const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8",
+  "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94"];
+function colorFor(topic) {
+  const key = topic || "Unclassified";
+  if (!(key in TOPIC_COLORS)) {
+    TOPIC_COLORS[key] = key === "Unclassified"
+      ? "#999999" : PALETTE[Object.keys(TOPIC_COLORS).length % PALETTE.length];
+  }
+  return TOPIC_COLORS[key];
+}
+
+fetch("/network").then(r => r.json()).then(data => {
+  const maxPr = Math.max(...data.nodes.map(n => n.pagerank), 1e-9);
+  const hasCoords = data.nodes.some(n => n.x !== null);
+  const elements = [
+    ...data.nodes.map(n => ({
+      data: { id: n.title, ...n },
+      position: n.x !== null ? { x: n.x * 120, y: -n.y * 120 } : undefined,
+    })),
+    ...data.edges.map(e => ({
+      data: { source: e.source, target: e.target, weight: e.weight },
+    })),
+  ];
+  const cy = cytoscape({
+    container: document.getElementById("cy"),
+    elements: elements,
+    layout: hasCoords ? { name: "preset" } : { name: "cose" },
+    style: [
+      { selector: "node", style: {
+          "background-color": ele => colorFor(ele.data("macro_topic")),
+          "width": ele => 10 + 60 * (ele.data("pagerank") / maxPr),
+          "height": ele => 10 + 60 * (ele.data("pagerank") / maxPr),
+          "label": "data(id)", "font-size": 7, "color": "#333",
+          "text-valign": "bottom", "text-margin-y": 2 } },
+      { selector: "edge", style: {
+          "width": ele => Math.min(1 + ele.data("weight"), 6),
+          "line-color": "#bbb", "target-arrow-color": "#bbb",
+          "target-arrow-shape": "triangle", "arrow-scale": 0.7,
+          "curve-style": "bezier", "opacity": 0.6 } },
+    ],
+  });
+  const info = document.getElementById("info");
+  info.textContent = `${data.nodes.length} pages, ${data.edges.length} ` +
+    `transitions (session gap ${data.session_gap_s}s). Node size = ` +
+    `PageRank, color = topic, position = ${hasCoords ? "UMAP" : "force"} layout.`;
+  cy.on("tap", "node", evt => {
+    const d = evt.target.data();
+    info.textContent = `${d.id} - visits: ${d.visit_count}, ` +
+      `in-degree: ${d.in_degree}, out-degree: ${d.out_degree}, ` +
+      `PageRank: ${d.pagerank}, topic: ${d.macro_topic || "Unclassified"}`;
+  });
+});
+</script>
+</body>
+</html>

@@ -27,6 +27,8 @@ dependencies:
   - tzlocal=5.*
   # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
   - matplotlib-base=3.9.*
+  # -- Session-network metrics (in/out-degree, PageRank)
+  - networkx=3.*
   # -- API layer
   - fastapi=0.115.*
   - uvicorn=0.32.*

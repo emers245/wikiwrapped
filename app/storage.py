@@ -165,6 +165,21 @@ def visit_timestamps(conn: sqlite3.Connection) -> list[str]:
     ]
 
 
+def visit_sequence(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """(canonical_title, timestamp) for every visit in time order; the
+    input for session-transition edges."""
+    return [
+        (row["canonical_title"], row["timestamp"])
+        for row in conn.execute(
+            """
+            SELECT pages.canonical_title, visits.timestamp
+            FROM visits JOIN pages ON pages.id = visits.page_id
+            ORDER BY visits.timestamp
+            """
+        )
+    ]
+
+
 def visit_date_range(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
     row = conn.execute("SELECT MIN(timestamp), MAX(timestamp) FROM visits").fetchone()
     return row[0], row[1]
