@@ -25,6 +25,34 @@ export WIKIPEDIA_WRAPPED_EMAIL="you@example.com"   # environment variable, or:
 echo "you@example.com" > contact_email.txt          # git-ignored file at repo root
 ```
 
+## Usage (Phase 1 pipeline)
+
+```bash
+# 1. Extract Wikipedia visits from your browser history (stdlib-only)
+python extract/extract_history.py --output wikipedia_history.json
+
+# 2. One-time: build the frozen UMAP reference space (hours at full scale;
+#    resumable; use --head/--tail for small test builds)
+python scripts/build_reference_space.py
+
+# 3. Serve
+uvicorn app.api:app --reload
+```
+
+Then drive it over HTTP:
+
+```bash
+curl -X POST localhost:8000/ingest --json @wikipedia_history.json
+curl -X POST "localhost:8000/enrich?include_pageviews=true"
+curl localhost:8000/stats/summary
+```
+
+Endpoints: `/health`, `POST /ingest`, `POST /enrich`, `/stats/summary`,
+`/stats/top?n=`, `/stats/heatmap?tz=`, `/stats/daily?tz=`,
+`/stats/busiest-week?tz=`, `/stats/topics`, `/map`, `/pages/{title}`.
+Interactive docs at `localhost:8000/docs`. Run tests with
+`pytest` (`-m "not integration"` to stay offline).
+
 ## Layout
 
 ```

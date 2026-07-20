@@ -185,6 +185,50 @@ def top_pages(conn: sqlite3.Connection, limit: int) -> list[dict]:
     ]
 
 
+def get_page(conn: sqlite3.Connection, canonical_title: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM pages WHERE canonical_title = ?", (canonical_title,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def page_visit_timestamps(conn: sqlite3.Connection, page_id: int) -> list[str]:
+    return [
+        row["timestamp"]
+        for row in conn.execute(
+            "SELECT timestamp FROM visits WHERE page_id = ? ORDER BY timestamp",
+            (page_id,),
+        )
+    ]
+
+
+def get_map_points(conn: sqlite3.Connection) -> list[dict]:
+    """Projected pages with topic + visit count: the /map payload."""
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT pages.canonical_title AS title, umap_coords.x, umap_coords.y,
+                   topic_cache.macro_topic, pages.visit_count
+            FROM pages
+            JOIN umap_coords
+                ON umap_coords.canonical_title = pages.canonical_title
+            LEFT JOIN topic_cache
+                ON topic_cache.canonical_title = pages.canonical_title
+            ORDER BY pages.canonical_title
+            """
+        )
+    ]
+
+
+def get_topic(conn: sqlite3.Connection, canonical_title: str) -> dict | None:
+    row = conn.execute(
+        "SELECT macro_topic, raw_label FROM topic_cache WHERE canonical_title = ?",
+        (canonical_title,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def page_topics(conn: sqlite3.Connection) -> list[dict]:
     """One row per unique page with its cached topic labels (NULL if the
     page has not been labeled yet)."""

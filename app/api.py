@@ -1,8 +1,169 @@
 """FastAPI app exposing computed results as JSON (repo_spec S7.7).
 
-Thin by design - all logic lives in the sibling modules; this is the seam
-the Phase 2 frontend consumes. Endpoints: /health, /ingest, /enrich,
-/stats/*, /map, /pages/{title}.
+Thin by design: every endpoint delegates to a sibling module and returns
+its data structure verbatim. This is the seam the Phase 2 frontend
+consumes.
 
-Implemented in Step 10.
+Endpoints:
+- GET  /health                DB counts + reference-space metadata (or null)
+- POST /ingest                standardized JSON as request body, or ?path=
+- POST /enrich                topics + embeddings + projection
+                              (+ pageviews with ?include_pageviews=true)
+- GET  /stats/summary | /stats/top?n= | /stats/heatmap?tz= |
+       /stats/daily?tz= | /stats/busiest-week?tz= | /stats/topics
+- GET  /map                   projected pages: title, x, y, topic, visits
+- GET  /pages/{title}         per-page detail (Phase 2 mouseover payload)
+
+Run:  uvicorn app.api:app --reload
+
+create_app() exists so tests (and future deployments) can point the app
+at a different database/reference directory; the module-level `app` uses
+the config defaults.
 """
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import Body, Depends, FastAPI, HTTPException, Query
+
+import config
+from app import embeddings, ingest, pageviews, stats, storage, topics, umap_space
+
+
+def create_app(
+    db_path: str | Path | None = None,
+    reference_dir: str | Path | None = None,
+) -> FastAPI:
+    app = FastAPI(title="Wikipedia Wrapped", version="0.1")
+    db_path = db_path or config.DB_PATH
+    reference_dir = reference_dir or config.REFERENCE_DIR
+
+    def get_db():
+        conn = storage.connect(db_path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def validate_tz(tz: str | None) -> str | None:
+        try:
+            config.get_timezone(tz)
+        except Exception:
+            raise HTTPException(400, f"Unknown IANA timezone: {tz!r}")
+        return tz
+
+    # -- pipeline ----------------------------------------------------------
+
+    @app.get("/health")
+    def health(conn=Depends(get_db)):
+        try:
+            reference = umap_space.load_meta(reference_dir)
+        except FileNotFoundError:
+            reference = None
+        return {
+            "status": "ok",
+            "database": str(db_path),
+            "pages": storage.count_pages(conn),
+            "visits": storage.count_visits(conn),
+            "reference_space": reference,
+        }
+
+    @app.post("/ingest")
+    def ingest_history(
+        path: str | None = None,
+        document: dict | None = Body(default=None),
+        conn=Depends(get_db),
+    ):
+        try:
+            if path is not None:
+                return ingest.ingest_file(path, conn)
+            if document is not None:
+                return ingest.ingest_document(document, conn)
+        except FileNotFoundError as exc:
+            raise HTTPException(400, f"No such file: {exc.filename}")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        raise HTTPException(
+            400, "Send the standardized history JSON as the request body, "
+            "or pass ?path=/local/file.json"
+        )
+
+    @app.post("/enrich")
+    def enrich(include_pageviews: bool = False, conn=Depends(get_db)):
+        report = {
+            "topics": topics.label_pages(conn),
+            "embeddings": embeddings.embed_pages(conn),
+        }
+        try:
+            report["projection"] = umap_space.project_pages(conn, reference_dir)
+        except FileNotFoundError as exc:
+            report["projection"] = {"error": str(exc)}
+        if include_pageviews:
+            report["pageviews"] = pageviews.fetch_all(conn)
+        return report
+
+    # -- stats (S7.3) ------------------------------------------------------
+
+    @app.get("/stats/summary")
+    def stats_summary(conn=Depends(get_db)):
+        return stats.summary(conn)
+
+    @app.get("/stats/top")
+    def stats_top(n: int = Query(10, ge=1, le=500), conn=Depends(get_db)):
+        return stats.most_visited(conn, n)
+
+    @app.get("/stats/heatmap")
+    def stats_heatmap(tz: str | None = None, conn=Depends(get_db)):
+        return stats.weekday_hour_grid(conn, validate_tz(tz))
+
+    @app.get("/stats/daily")
+    def stats_daily(tz: str | None = None, conn=Depends(get_db)):
+        return stats.daily_series(conn, validate_tz(tz))
+
+    @app.get("/stats/busiest-week")
+    def stats_busiest_week(tz: str | None = None, conn=Depends(get_db)):
+        return stats.busiest_week(conn, validate_tz(tz))
+
+    @app.get("/stats/topics")
+    def stats_topics(conn=Depends(get_db)):
+        return stats.topic_distribution(conn)
+
+    # -- map + page detail -------------------------------------------------
+
+    @app.get("/map")
+    def map_points(conn=Depends(get_db)):
+        return storage.get_map_points(conn)
+
+    @app.get("/pages/{title:path}")
+    def page_detail(title: str, conn=Depends(get_db)):
+        page = storage.get_page(conn, title)
+        if page is None:  # accept underscore form too
+            page = storage.get_page(conn, title.replace("_", " "))
+        if page is None:
+            raise HTTPException(404, f"No visited page titled {title!r}")
+
+        detail = {
+            **page,
+            "visits": storage.page_visit_timestamps(conn, page["id"]),
+            "topic": storage.get_topic(conn, page["canonical_title"]),
+            "coords": storage.get_umap_coords(conn).get(page["canonical_title"]),
+            "pageviews": None,
+        }
+        span = pageviews.history_date_range(conn)
+        if span is not None:  # cached only; /enrich fetches (D7)
+            cached = storage.get_pageview_cache(conn, *span)
+            if page["canonical_title"] in cached:
+                total = cached[page["canonical_title"]]
+                detail["pageviews"] = {
+                    "date_start": span[0],
+                    "date_end": span[1],
+                    "total_views": total or 0,
+                    "no_data": total is None,
+                }
+        return detail
+
+    return app
+
+
+app = create_app()
