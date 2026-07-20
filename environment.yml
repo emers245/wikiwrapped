@@ -1,0 +1,34 @@
+# Pinned conda environment for Wikipedia Wrapped (repo_spec S9, D8).
+# Build:  conda env create -f environment.yml
+# Verify: conda run -n wikipedia-wrapped python scripts/check_env.py --full
+name: wikipedia-wrapped
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # -- Fragile cluster: numba/llvmlite are strict about NumPy + Python versions.
+  #    These four pins are a known-good combination and must move together.
+  - python=3.11.*
+  - numpy=1.26.4
+  - numba=0.60.0
+  - llvmlite=0.43.0
+  - umap-learn=0.5.7
+  - scikit-learn=1.5.*
+  # -- Embeddings. Upstream torch dropped Intel-macOS wheels after 2.2.x, but
+  #    conda-forge builds CPU pytorch for osx-64; 2.10.0 verified to solve
+  #    against the numpy 1.26.4 pin on this machine (2026-07-19).
+  - pytorch=2.10.0
+  - sentence-transformers=3.2.1
+  # -- Data + HTTP
+  - pandas=2.2.*
+  - requests=2.32.*
+  - tqdm=4.*
+  - pyarrow=17.*
+  - tzlocal=5.*
+  # -- API layer
+  - fastapi=0.115.*
+  - uvicorn=0.32.*
+  - python-multipart=0.0.*
+  # -- Testing (httpx backs FastAPI's TestClient)
+  - pytest=8.*
+  - httpx=0.27.*
