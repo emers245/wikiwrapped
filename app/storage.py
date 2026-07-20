@@ -156,6 +156,50 @@ def count_visits(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM visits").fetchone()[0]
 
 
+def visit_timestamps(conn: sqlite3.Connection) -> list[str]:
+    return [
+        row["timestamp"]
+        for row in conn.execute("SELECT timestamp FROM visits ORDER BY timestamp")
+    ]
+
+
+def visit_date_range(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
+    row = conn.execute("SELECT MIN(timestamp), MAX(timestamp) FROM visits").fetchone()
+    return row[0], row[1]
+
+
+def top_pages(conn: sqlite3.Connection, limit: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT canonical_title, visit_count, first_seen
+            FROM pages
+            ORDER BY visit_count DESC, canonical_title ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    ]
+
+
+def page_topics(conn: sqlite3.Connection) -> list[dict]:
+    """One row per unique page with its cached topic labels (NULL if the
+    page has not been labeled yet)."""
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT pages.canonical_title, topic_cache.macro_topic,
+                   topic_cache.raw_label
+            FROM pages
+            LEFT JOIN topic_cache
+                ON topic_cache.canonical_title = pages.canonical_title
+            """
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # redirect_cache (D5, D6)
 # ---------------------------------------------------------------------------
