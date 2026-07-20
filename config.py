@@ -3,6 +3,7 @@
 Every module reads settings from here; nothing else hardcodes paths or URLs.
 """
 
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -20,9 +21,32 @@ DB_PATH = DATA_DIR / "app.db"
 SCHEMA_VERSION = "1.0"
 
 # ---------------------------------------------------------------------------
-# External APIs (repo_spec S8) — Wikimedia requires a real contact address
+# External APIs (repo_spec S8) - Wikimedia requires a real contact address.
+# The email is personal data and is never committed: it is read from the
+# WIKIPEDIA_WRAPPED_EMAIL environment variable, falling back to a git-ignored
+# contact_email.txt at the repo root.
 # ---------------------------------------------------------------------------
-USER_AGENT = "WikipediaWrapped/0.1 (emerjoe1779@gmail.com)"
+CONTACT_EMAIL_ENV_VAR = "WIKIPEDIA_WRAPPED_EMAIL"
+CONTACT_EMAIL_FILE = PROJECT_ROOT / "contact_email.txt"
+
+
+def get_contact_email() -> str:
+    email = os.environ.get(CONTACT_EMAIL_ENV_VAR, "").strip()
+    if not email and CONTACT_EMAIL_FILE.exists():
+        email = CONTACT_EMAIL_FILE.read_text(encoding="utf-8").strip()
+    if not email:
+        raise RuntimeError(
+            "No contact email configured. Wikimedia requires a real contact "
+            f"address in API User-Agent headers; set the {CONTACT_EMAIL_ENV_VAR} "
+            f"environment variable or create {CONTACT_EMAIL_FILE.name} "
+            "(git-ignored) in the project root containing your email."
+        )
+    return email
+
+
+def get_user_agent() -> str:
+    return f"WikipediaWrapped/0.1 ({get_contact_email()})"
+
 
 WIKI_LANG = "en"
 MEDIAWIKI_API_URL = f"https://{WIKI_LANG}.wikipedia.org/w/api.php"
@@ -48,7 +72,7 @@ BACKOFF_BASE_S = 2.0      # exponential backoff on 429/5xx: 2s, 4s, 8s, ...
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # ---------------------------------------------------------------------------
-# Timezone (stats are computed in local time; repo_spec §7.3)
+# Timezone (stats are computed in local time; repo_spec S7.3)
 # ---------------------------------------------------------------------------
 # None -> auto-detect the device's IANA zone via tzlocal.
 # Set to an IANA name (e.g. "America/Chicago") to force a zone.
