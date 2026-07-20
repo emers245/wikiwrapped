@@ -297,6 +297,40 @@ def get_embeddings(
 
 
 # ---------------------------------------------------------------------------
+# pageview_cache (D6, D7): keyed by title + date range
+# ---------------------------------------------------------------------------
+
+def get_pageview_cache(
+    conn: sqlite3.Connection, date_start: str, date_end: str
+) -> dict[str, int | None]:
+    """title -> total_views for one date range. NULL total_views means the
+    API had no data for that title/range (cached so it is not re-asked)."""
+    return {
+        row["canonical_title"]: row["total_views"]
+        for row in conn.execute(
+            "SELECT canonical_title, total_views FROM pageview_cache "
+            "WHERE date_start = ? AND date_end = ?",
+            (date_start, date_end),
+        )
+    }
+
+
+def upsert_pageviews(
+    conn: sqlite3.Connection,
+    canonical_title: str,
+    date_start: str,
+    date_end: str,
+    total_views: int | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO pageview_cache "
+        "(canonical_title, date_start, date_end, total_views, fetched_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (canonical_title, date_start, date_end, total_views, utcnow_iso()),
+    )
+
+
+# ---------------------------------------------------------------------------
 # umap_coords (D4)
 # ---------------------------------------------------------------------------
 
