@@ -140,6 +140,62 @@ def test_page_detail_and_underscore_form(client):
     assert client.get("/pages/No_Such_Page").status_code == 404
 
 
+def test_index_serves_frontend(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Wikipedia Wrapped" in response.text
+    assert client.get("/static/main.js").status_code == 200
+
+
+def test_dashboard_shape(client):
+    seed(client)
+    data = client.get("/dashboard").json()
+    assert data["summary"]["total_visits"] == 3
+    assert data["reference"] is None  # fixture has no reference dir
+
+    pages = {p["title"]: p for p in data["pages"]}
+    jainism = pages["Jainism"]
+    assert jainism["visits"] == ["2025-01-01T10:00:00Z", "2025-01-02T11:00:00Z"]
+    assert jainism["pageviews"] == 12345
+    assert (jainism["x"], jainism["y"]) == (1.5, -2.0)
+    assert jainism["macro_topic"] == "Culture.Philosophy and religion"
+    assert jainism["first_seen"] == "2025-01-01T10:00:00Z"
+    assert {"in_degree", "out_degree", "pagerank"} <= set(jainism)
+    assert data["edges"] == []  # DOC visits are > 15 min apart
+
+    assert data["stats"]["topics"]["total_pages"] == 2
+    assert len(data["stats"]["hour_grid"]["counts"]) == 7
+    assert data["stats"]["daily"]["days"]
+
+
+def test_dashboard_reference_fractions_and_backdrop_limit(tmp_path):
+    import json as jsonlib
+
+    refdir = tmp_path / "ref"
+    refdir.mkdir()
+    points = (
+        [{"title": f"H{i}", "macro_topic": "STEM", "x": float(i), "y": 0.0,
+          "source": "head"} for i in range(3)]
+        + [{"title": "H3", "macro_topic": None, "x": 3.0, "y": 0.0,
+            "source": "head"}]
+        + [{"title": "T1", "macro_topic": "Geography", "x": 4.0, "y": 0.0,
+            "source": "tail"}]
+    )
+    (refdir / "reference_points.json").write_text(jsonlib.dumps(points))
+
+    app = api.create_app(db_path=tmp_path / "t.db", reference_dir=refdir)
+    with TestClient(app) as client:
+        ref = client.get("/dashboard").json()["reference"]
+        assert ref["points_total"] == 5
+        fractions = {f["macro_topic"]: f["fraction"]
+                     for f in ref["head_fractions"]}
+        assert fractions == {"STEM": 0.75, "Unclassified": 0.25}  # head only
+        assert len(ref["backdrop"]) == 5
+
+        limited = client.get("/dashboard", params={"backdrop_limit": 2}).json()
+        assert len(limited["reference"]["backdrop"]) == 2
+
+
 def test_enrich_composes_module_reports(client, monkeypatch):
     from app import embeddings, pageviews, topics, umap_space
 

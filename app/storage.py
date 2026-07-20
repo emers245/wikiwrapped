@@ -261,6 +261,13 @@ def page_topics(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def all_pages(conn: sqlite3.Connection) -> list[dict]:
+    return [
+        dict(row)
+        for row in conn.execute("SELECT * FROM pages ORDER BY canonical_title")
+    ]
+
+
 def all_page_titles(conn: sqlite3.Connection) -> list[str]:
     return [
         row["canonical_title"]

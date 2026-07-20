@@ -23,14 +23,18 @@ the config defaults.
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 import config
 from app import (embeddings, ingest, network, pageviews, stats, storage,
                  topics, umap_space)
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(
@@ -54,6 +58,77 @@ def create_app(
         except Exception:
             raise HTTPException(400, f"Unknown IANA timezone: {tz!r}")
         return tz
+
+    # -- frontend (Phase 2) ------------------------------------------------
+
+    @app.get("/", response_class=HTMLResponse)
+    def index():
+        return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+    @app.get("/dashboard")
+    def dashboard(
+        backdrop_limit: int = Query(10_000, ge=0), conn=Depends(get_db)
+    ):
+        """Everything the frontend needs in one load, so hover interactions
+        never wait on the network."""
+        graph = network.graph_metrics(conn)
+
+        visits_by_title = defaultdict(list)
+        for title, stamp in storage.visit_sequence(conn):
+            visits_by_title[title].append(stamp)
+        span = pageviews.history_date_range(conn)
+        views = storage.get_pageview_cache(conn, *span) if span else {}
+        first_seen = {
+            page["canonical_title"]: page["first_seen"]
+            for page in storage.all_pages(conn)
+        }
+        pages = [
+            {
+                **node,
+                "first_seen": first_seen.get(node["title"]),
+                "pageviews": views.get(node["title"]),
+                "visits": visits_by_title.get(node["title"], []),
+            }
+            for node in graph["nodes"]
+        ]
+
+        try:
+            points = umap_space.load_points(reference_dir)
+            head = [p for p in points if p.get("source") == "head"]
+            counts = Counter(
+                (p.get("macro_topic") or "Unclassified") for p in head
+            )
+            total = sum(counts.values()) or 1
+            backdrop = points
+            if backdrop_limit and len(points) > backdrop_limit:
+                step = len(points) / backdrop_limit
+                backdrop = [points[int(i * step)] for i in range(backdrop_limit)]
+            reference = {
+                "points_total": len(points),
+                "backdrop": [
+                    {"x": p["x"], "y": p["y"], "macro_topic": p.get("macro_topic")}
+                    for p in backdrop
+                ],
+                "head_fractions": [
+                    {"macro_topic": topic, "fraction": round(count / total, 4)}
+                    for topic, count in counts.most_common()
+                ],
+            }
+        except FileNotFoundError:
+            reference = None
+
+        return {
+            "summary": stats.summary(conn),
+            "session_gap_s": graph["session_gap_s"],
+            "pages": pages,
+            "edges": graph["edges"],
+            "reference": reference,
+            "stats": {
+                "topics": stats.topic_distribution(conn),
+                "daily": stats.daily_series(conn),
+                "hour_grid": stats.weekday_hour_grid(conn),
+            },
+        }
 
     # -- pipeline ----------------------------------------------------------
 
@@ -176,6 +251,7 @@ def create_app(
                 }
         return detail
 
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
 
 
