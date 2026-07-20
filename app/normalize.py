@@ -98,6 +98,18 @@ def url_to_title(url: str) -> str | None:
     return title[0].upper() + title[1:]
 
 
+def is_article_title(title: str) -> bool:
+    """True if a bare title string plausibly names a mainspace article.
+
+    Used by the reference sampler on pageview-dump titles; url_to_title
+    remains the entry point for URLs.
+    """
+    title = title.strip()
+    if not title or "|" in title or "#" in title:
+        return False
+    return not _is_non_article_namespace(title)
+
+
 def resolve_redirects(
     titles: Iterable[str],
     session: requests.Session | None = None,

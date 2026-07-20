@@ -71,6 +71,11 @@ BACKOFF_BASE_S = 2.0      # exponential backoff on 429/5xx: 2s, 4s, 8s, ...
 # ---------------------------------------------------------------------------
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
+# Reference-space sample sizes (D4): top-viewed head + random tail.
+# Decision 2026-07-19: ~40k total matches the old sampler's proven scale.
+REFERENCE_HEAD_SIZE = 30_000
+REFERENCE_TAIL_SIZE = 10_000
+
 # ---------------------------------------------------------------------------
 # Timezone (stats are computed in local time; repo_spec S7.3)
 # ---------------------------------------------------------------------------

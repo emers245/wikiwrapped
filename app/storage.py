@@ -22,6 +22,8 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 
+import numpy as np
+
 import config
 
 SCHEMA = """
@@ -200,25 +202,31 @@ def page_topics(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def all_page_titles(conn: sqlite3.Connection) -> list[str]:
+    return [
+        row["canonical_title"]
+        for row in conn.execute(
+            "SELECT canonical_title FROM pages ORDER BY canonical_title"
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # topic_cache (D3, D6)
 # ---------------------------------------------------------------------------
 
-def pages_without_topics(conn: sqlite3.Connection) -> list[str]:
-    """Visited pages that have no topic_cache row yet (cache misses, D6).
-    Unclassifiable pages get a NULL-label row, so they are not returned
-    again."""
-    return [
-        row["canonical_title"]
+def get_topic_cache(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Full cache load: title -> {macro_topic, raw_label}. NULL labels mean
+    "known unclassifiable, do not re-fetch" (D6)."""
+    return {
+        row["canonical_title"]: {
+            "macro_topic": row["macro_topic"],
+            "raw_label": row["raw_label"],
+        }
         for row in conn.execute(
-            """
-            SELECT canonical_title FROM pages
-            WHERE canonical_title NOT IN
-                (SELECT canonical_title FROM topic_cache)
-            ORDER BY canonical_title
-            """
+            "SELECT canonical_title, macro_topic, raw_label FROM topic_cache"
         )
-    ]
+    }
 
 
 def upsert_topic(
@@ -233,6 +241,94 @@ def upsert_topic(
         "VALUES (?, ?, ?, ?)",
         (canonical_title, macro_topic, raw_label, utcnow_iso()),
     )
+
+
+# ---------------------------------------------------------------------------
+# embedding_cache (D6): vectors stored as float32 BLOBs
+# ---------------------------------------------------------------------------
+
+def embedded_titles(conn: sqlite3.Connection, model_name: str) -> set[str]:
+    return {
+        row["canonical_title"]
+        for row in conn.execute(
+            "SELECT canonical_title FROM embedding_cache WHERE model_name = ?",
+            (model_name,),
+        )
+    }
+
+
+def upsert_embedding(
+    conn: sqlite3.Connection,
+    canonical_title: str,
+    model_name: str,
+    vector: np.ndarray,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO embedding_cache "
+        "(canonical_title, model_name, vector, fetched_at) VALUES (?, ?, ?, ?)",
+        (
+            canonical_title,
+            model_name,
+            np.asarray(vector, dtype=np.float32).tobytes(),
+            utcnow_iso(),
+        ),
+    )
+
+
+def get_embeddings(
+    conn: sqlite3.Connection, model_name: str, titles: list[str]
+) -> dict[str, np.ndarray]:
+    """Cached vectors for the requested titles (missing ones absent from
+    the result). Queries in chunks to stay under SQLite's parameter cap."""
+    out: dict[str, np.ndarray] = {}
+    unique = list(dict.fromkeys(titles))
+    for start in range(0, len(unique), 500):
+        chunk = unique[start:start + 500]
+        placeholders = ",".join("?" * len(chunk))
+        for row in conn.execute(
+            f"SELECT canonical_title, vector FROM embedding_cache "
+            f"WHERE model_name = ? AND canonical_title IN ({placeholders})",
+            [model_name, *chunk],
+        ):
+            out[row["canonical_title"]] = np.frombuffer(
+                row["vector"], dtype=np.float32
+            )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# umap_coords (D4)
+# ---------------------------------------------------------------------------
+
+def pages_without_coords(conn: sqlite3.Connection) -> list[str]:
+    return [
+        row["canonical_title"]
+        for row in conn.execute(
+            """
+            SELECT canonical_title FROM pages
+            WHERE canonical_title NOT IN
+                (SELECT canonical_title FROM umap_coords)
+            ORDER BY canonical_title
+            """
+        )
+    ]
+
+
+def upsert_umap_coords(
+    conn: sqlite3.Connection, coords: dict[str, tuple[float, float]]
+) -> None:
+    conn.executemany(
+        "INSERT OR REPLACE INTO umap_coords (canonical_title, x, y) "
+        "VALUES (?, ?, ?)",
+        [(title, x, y) for title, (x, y) in coords.items()],
+    )
+
+
+def get_umap_coords(conn: sqlite3.Connection) -> dict[str, tuple[float, float]]:
+    return {
+        row["canonical_title"]: (row["x"], row["y"])
+        for row in conn.execute("SELECT canonical_title, x, y FROM umap_coords")
+    }
 
 
 # ---------------------------------------------------------------------------

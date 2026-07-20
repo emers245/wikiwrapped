@@ -25,6 +25,8 @@ dependencies:
   - tqdm=4.*
   - pyarrow=17.*
   - tzlocal=5.*
+  # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
+  - matplotlib-base=3.9.*
   # -- API layer
   - fastapi=0.115.*
   - uvicorn=0.32.*

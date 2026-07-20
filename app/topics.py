@@ -24,6 +24,8 @@ import logging
 import sqlite3
 import time
 
+from tqdm import tqdm
+
 import config
 from app import storage, wiki_http
 
@@ -63,32 +65,49 @@ def fetch_topic(title: str, session=None) -> str | None:
     return label.replace("_", " ") if label else None
 
 
-def label_pages(conn: sqlite3.Connection, session=None) -> dict:
-    """Fetch and cache topics for every visited page missing one (D6).
+def label_titles(
+    conn: sqlite3.Connection,
+    titles: list[str],
+    session=None,
+    progress: bool = False,
+) -> dict:
+    """Fetch and cache topics for every given title missing a cache row
+    (D6). Used for visited pages and for the reference sample, which share
+    one topic_cache. Commits after each title so an interrupted run keeps
+    its progress."""
+    cached = storage.get_topic_cache(conn)
+    unique = list(dict.fromkeys(t for t in titles if t))
+    todo = [t for t in unique if t not in cached]
+    report = {
+        "labeled": 0,
+        "unclassified": 0,
+        "already_cached": len(unique) - len(todo),
+    }
+    if not todo:
+        return report
 
-    Commits after each page so an interrupted run keeps its progress.
-    """
-    todo = storage.pages_without_topics(conn)
-    already_cached = storage.count_pages(conn) - len(todo)
     session = session or wiki_http.make_session()
-
-    labeled = 0
-    unclassified = 0
-    for index, title in enumerate(todo):
+    iterator = tqdm(todo, desc="topics", unit="page") if progress else todo
+    for index, title in enumerate(iterator):
         raw_label = fetch_topic(title, session)
         if raw_label is None:
             storage.upsert_topic(conn, title, None, None)
-            unclassified += 1
+            report["unclassified"] += 1
             log.info("unclassified: %s", title)
         else:
             storage.upsert_topic(conn, title, macro(raw_label), raw_label)
-            labeled += 1
+            report["labeled"] += 1
         conn.commit()
         if index < len(todo) - 1:
             time.sleep(config.THROTTLE_S)
+    return report
 
+
+def label_pages(conn: sqlite3.Connection, session=None) -> dict:
+    """Label every visited page missing a topic (the /enrich entry point)."""
+    report = label_titles(conn, storage.all_page_titles(conn), session)
     return {
-        "pages_labeled": labeled,
-        "pages_unclassified": unclassified,
-        "pages_already_cached": already_cached,
+        "pages_labeled": report["labeled"],
+        "pages_unclassified": report["unclassified"],
+        "pages_already_cached": report["already_cached"],
     }
