@@ -96,8 +96,13 @@ def test_url_to_title_non_articles(url):
 
 @pytest.fixture
 def no_sleep(monkeypatch):
+    # Throttle sleeps happen in normalize, backoff sleeps in wiki_http;
+    # collect both in one ordered list.
+    from app import wiki_http
+
     sleeps = []
     monkeypatch.setattr(normalize.time, "sleep", sleeps.append)
+    monkeypatch.setattr(wiki_http.time, "sleep", sleeps.append)
     return sleeps
 
 

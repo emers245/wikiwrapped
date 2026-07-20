@@ -17,7 +17,8 @@ class FakeResponse:
 
 
 class FakeSession:
-    """Returns queued responses and records each request's params."""
+    """Returns queued responses and records each request's payload
+    (query params for GET, JSON body for POST)."""
 
     def __init__(self, responses):
         self._responses = list(responses)
@@ -25,6 +26,10 @@ class FakeSession:
 
     def get(self, url, params=None, timeout=None):
         self.calls.append(params)
+        return self._responses.pop(0)
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append(json)
         return self._responses.pop(0)
 
 

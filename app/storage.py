@@ -201,6 +201,41 @@ def page_topics(conn: sqlite3.Connection) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# topic_cache (D3, D6)
+# ---------------------------------------------------------------------------
+
+def pages_without_topics(conn: sqlite3.Connection) -> list[str]:
+    """Visited pages that have no topic_cache row yet (cache misses, D6).
+    Unclassifiable pages get a NULL-label row, so they are not returned
+    again."""
+    return [
+        row["canonical_title"]
+        for row in conn.execute(
+            """
+            SELECT canonical_title FROM pages
+            WHERE canonical_title NOT IN
+                (SELECT canonical_title FROM topic_cache)
+            ORDER BY canonical_title
+            """
+        )
+    ]
+
+
+def upsert_topic(
+    conn: sqlite3.Connection,
+    canonical_title: str,
+    macro_topic: str | None,
+    raw_label: str | None,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO topic_cache "
+        "(canonical_title, macro_topic, raw_label, fetched_at) "
+        "VALUES (?, ?, ?, ?)",
+        (canonical_title, macro_topic, raw_label, utcnow_iso()),
+    )
+
+
+# ---------------------------------------------------------------------------
 # redirect_cache (D5, D6)
 # ---------------------------------------------------------------------------
 

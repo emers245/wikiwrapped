@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import requests
 
 import config
+from app import wiki_http
 
 # MediaWiki Action API caps titles= at 50 per request for anonymous clients.
 BATCH_SIZE = 50
@@ -107,7 +108,7 @@ def resolve_redirects(
     Applies the API's title normalization (case, underscores) and follows
     redirect chains. Titles that do not exist or are invalid map to None.
     """
-    session = session or make_session()
+    session = session or wiki_http.make_session()
     todo = [t for t in dict.fromkeys(titles) if t]
     result: dict[str, str | None] = {}
     # "|" is the API list separator and illegal in titles; do not batch it.
@@ -147,16 +148,6 @@ def canonicalize(
     }
 
 
-def make_session() -> requests.Session:
-    """Session with the Wikimedia-required identification headers."""
-    session = requests.Session()
-    user_agent = config.get_user_agent()
-    session.headers.update(
-        {"User-Agent": user_agent, "Api-User-Agent": user_agent}
-    )
-    return session
-
-
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
@@ -182,29 +173,21 @@ def _query_param(query: str, key: str) -> str | None:
 
 
 def _api_query(session: requests.Session, batch: list[str]) -> dict:
-    """One Action API request with retry + exponential backoff on 429/5xx."""
-    params = {
-        "action": "query",
-        "redirects": 1,
-        "titles": "|".join(batch),
-        "format": "json",
-        "formatversion": 2,
-    }
-    delay = config.BACKOFF_BASE_S
-    for attempt in range(config.MAX_RETRIES + 1):
-        response = session.get(
-            config.MEDIAWIKI_API_URL,
-            params=params,
-            timeout=config.REQUEST_TIMEOUT_S,
-        )
-        if response.status_code == 200:
-            return response.json()
-        retryable = response.status_code == 429 or response.status_code >= 500
-        if not retryable or attempt == config.MAX_RETRIES:
-            response.raise_for_status()
-        time.sleep(delay)
-        delay *= 2
-    raise AssertionError("unreachable")
+    """One Action API request (retry/backoff handled by wiki_http)."""
+    response = wiki_http.request_with_retries(
+        session,
+        "get",
+        config.MEDIAWIKI_API_URL,
+        params={
+            "action": "query",
+            "redirects": 1,
+            "titles": "|".join(batch),
+            "format": "json",
+            "formatversion": 2,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _map_batch(batch: list[str], data: dict) -> dict[str, str | None]:
