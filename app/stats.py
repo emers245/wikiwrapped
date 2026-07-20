@@ -1,5 +1,5 @@
 """Basic reading stats returning JSON-ready data structures, never plots
-(repo_spec §7.3, D2).
+(repo_spec S7.3, D2).
 
 Frequency/time stats are computed over visits; "pages visited" counts unique
 pages. Time-of-day stats are timezone-aware: IANA zone from config

@@ -1,0 +1,17 @@
+# Local data: database + reference-space artifacts (kept out of git; see repo_spec S4)
+data/*
+!data/reference/
+data/reference/*
+!data/reference/.gitkeep
+
+# Personal contact email for Wikimedia API User-Agent (never published)
+contact_email.txt
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# macOS
+.DS_Store

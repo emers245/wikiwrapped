@@ -1,4 +1,4 @@
-"""Environment smoke test (repo_spec §9): must pass before any other work.
+"""Environment smoke test (repo_spec S9): must pass before any other work.
 
 Verifies imports of the fragile umap/numba/llvmlite cluster plus the other
 core dependencies, and that numba can actually JIT-compile on this machine.
@@ -39,14 +39,14 @@ def main() -> int:
             mod = importlib.import_module(name)
             version = getattr(mod, "__version__", "?")
             print(f"  ok  {name:<22} {version}")
-        except Exception as exc:  # noqa: BLE001 — report every failure kind
+        except Exception as exc:  # noqa: BLE001 - report every failure kind
             print(f"FAIL  {name:<22} {exc}")
             failed.append(name)
 
     print(f"  ok  sqlite3 (stdlib)      {sqlite3.sqlite_version}")
 
     if not failed:
-        # Imports alone don't prove llvmlite works — force a JIT compile.
+        # Imports alone don't prove llvmlite works - force a JIT compile.
         import numba
         import numpy as np
 
@@ -68,7 +68,7 @@ def main() -> int:
             print("  ok  umap fit_transform (30x8 toy data)")
 
     if failed:
-        print(f"\nEnvironment NOT ready — failed imports: {', '.join(failed)}")
+        print(f"\nEnvironment NOT ready - failed imports: {', '.join(failed)}")
         return 1
     print("\nEnvironment ready.")
     return 0

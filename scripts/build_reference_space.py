@@ -1,5 +1,5 @@
 """One-time/refreshable build of the frozen UMAP reference space (repo_spec
-§7.5, D4).
+S7.5, D4).
 
 Samples ~40k articles (30k top-viewed head from a pageviews dump + 10k
 random tail), labels topics, fetches summaries, embeds, fits UMAP once, and

@@ -1,4 +1,4 @@
-"""Article summary fetch + sentence-transformer encoding (repo_spec §7.4).
+"""Article summary fetch + sentence-transformer encoding (repo_spec S7.4).
 
 Fetches description + extract from the Wikipedia REST summary endpoint,
 encodes with all-MiniLM-L6-v2 (normalized vectors), caches in
