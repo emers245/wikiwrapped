@@ -35,8 +35,25 @@ python extract/extract_history.py --output wikipedia_history.json
 #    resumable; use --head/--tail for small test builds)
 python scripts/build_reference_space.py
 
-# 3. Serve
-uvicorn app.api:app --reload
+# 3. Serve + open the dashboard
+./run.sh
+```
+
+`run.sh` is the whole launch procedure in one command: it locates the conda
+environment by path (so no `conda activate` is needed first), starts
+uvicorn, waits for the API to answer, opens the dashboard in a browser, and
+leaves the server in the foreground so Ctrl-C stops it. Re-running it while
+a server is already up on that port reuses it instead of failing to bind.
+
+```bash
+./run.sh --port 8080     # serve somewhere else
+./run.sh --no-browser    # server only
+```
+
+To launch from anywhere, add an alias to `~/.zshrc`:
+
+```bash
+alias wikiwrapped="$HOME/Documents/GitHub/wikipedia-wrapped/run.sh"
 ```
 
 Then drive it over HTTP:
@@ -113,9 +130,17 @@ The category chart is drawn with horizontal bars specifically so topic
 names stay readable in a narrow column, where rotated labels under
 vertical bars did not.
 
+Chart type sizes are the `AXIS_FONT` / `LABEL_FONT` / `LEGEND_FONT`
+constants at the top of `panels.js` (SVG text cannot be styled from
+`style.css` the way the panel headings are). The `MARGIN` and `CAT_MARGIN`
+objects beside them reserve room for that text, so raising a font size
+means raising the matching margin, and `--panel-w` in `style.css` sets how
+much width the labels have to fit in.
+
 ## Layout
 
 ```
+run.sh                       # one-command launcher (server + browser)
 config.py                    # paths, API user-agent, timezone, request policy
 extract/extract_history.py   # standalone: browser history -> standardized JSON
 app/                         # ingest, normalize, storage, stats, topics,
