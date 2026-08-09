@@ -97,6 +97,63 @@ window.WW = (function () {
   btnUmap.addEventListener("click", () => setMode("umap"));
   btnNet.addEventListener("click", () => setMode("network"));
 
+  /* -- layout bus ---------------------------------------------------------- */
+  /* Every view sizes itself from its live container box, and none of them
+     hear about a CSS-driven width change on their own. One debounced
+     handler here re-fits whichever ones have been initialized. */
+  const STOWED_KEY = "ww.panelsStowed";
+  const SLIDE_MS = 250;           // must match the #panels width transition
+  const btnPanels = document.getElementById("btn-panels");
+  let relayoutTimer = null;
+
+  function relayoutAll() {
+    if (window.WWpanels) WWpanels.relayout();
+    if (window.WWmap) WWmap.relayout();
+    if (window.WWnet) WWnet.relayout();
+  }
+
+  function relayoutSoon(delay) {
+    clearTimeout(relayoutTimer);
+    relayoutTimer = setTimeout(relayoutAll, delay);
+  }
+
+  window.addEventListener("resize", () => relayoutSoon(150));
+
+  /* -- panels toggle ------------------------------------------------------- */
+  function setPanelsStowed(stowed) {
+    document.body.classList.toggle("panels-stowed", stowed);
+    btnPanels.classList.toggle("active", !stowed);
+    btnPanels.setAttribute("aria-expanded", String(!stowed));
+    btnPanels.title = stowed ? "Show summary panels" : "Hide summary panels";
+    try {
+      localStorage.setItem(STOWED_KEY, stowed ? "1" : "0");
+    } catch (err) {
+      /* private browsing or a file:// origin: the preference just does not
+         persist, which is not worth interrupting the page for. */
+    }
+    // Redraw once the slide has settled, on the final width.
+    relayoutSoon(SLIDE_MS + 30);
+  }
+
+  btnPanels.addEventListener("click", () =>
+    setPanelsStowed(!document.body.classList.contains("panels-stowed")));
+
+  /* Restore the saved state before boot() measures anything, so the first
+     render already uses the correct panel width. The no-anim class keeps a
+     stowed sidebar from visibly sliding shut on page load. */
+  (function restorePanelsState() {
+    let saved = null;
+    try {
+      saved = localStorage.getItem(STOWED_KEY);
+    } catch (err) {
+      /* see above */
+    }
+    document.body.classList.add("no-anim");
+    setPanelsStowed(saved === "1");
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => document.body.classList.remove("no-anim")));
+  })();
+
   /* -- boot ---------------------------------------------------------------- */
   async function boot() {
     const response = await fetch("/dashboard");

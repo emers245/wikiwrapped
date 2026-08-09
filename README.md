@@ -70,16 +70,48 @@ served from `app/static/`) that loads everything once from
     can be followed.
 - **Hover** any node: it enlarges and a popup shows its core stats
   (your visits, topic, views by other readers, in/out-degree, PageRank)
-  with a link to the article. The bottom panels simultaneously fade to
+  with a link to the article. The side panels simultaneously fade to
   highlight that page: its topic's bars in the category chart, and
   vertical markers at its visit dates/times on the time panels.
-- **Bottom panels**: category fractions (you vs the top-viewed "popular
+- **Side panels**: category fractions (you vs the top-viewed "popular
   pages" sample from the reference build), visits per day with 7-day
   rolling average, and visits by hour of day (device timezone).
+  They sit in a left sidebar that the **Panels** button in the header
+  stows and restores, so the map or network can have the full window.
+  The choice is remembered across reloads (`localStorage`), and below a
+  720px viewport the sidebar floats over the visualization as a drawer
+  instead of taking its own column.
 
 The UMAP mode and the "popular" baseline require the reference space
 (`data/reference/`) and enriched pages (`POST /enrich`); without them the
 app falls back to network mode only.
+
+### Frontend layout contract
+
+The page is a two-column CSS grid: a full-width header over a sidebar
+column and the visualization. The sidebar's width lives on the sidebar
+element rather than in `grid-template-columns`, because an `auto` grid
+column follows an animated element width in every browser while an
+animated grid template does not.
+
+Every view measures itself from its live container box and none of them
+notice a CSS-driven resize on their own, so each module exposes a
+`relayout()` that `main.js` calls from one debounced handler:
+
+| module       | `relayout()` does                                     |
+|--------------|-------------------------------------------------------|
+| `panels.js`  | full D3 redraw (charts are sized from the SVG box)     |
+| `map.js`     | recomputes the equal-aspect scales and redraws         |
+| `network.js` | `cy.resize()` (cytoscape caches its container size)    |
+
+Add a view and it needs a `relayout()` too, or it will render at a stale
+width whenever the sidebar is toggled. The toggle redraws once the slide
+has settled; `SLIDE_MS` in `main.js` must match the `#panels` width
+transition in `style.css`.
+
+The category chart is drawn with horizontal bars specifically so topic
+names stay readable in a narrow column, where rotated labels under
+vertical bars did not.
 
 ## Layout
 

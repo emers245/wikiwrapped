@@ -94,10 +94,12 @@ window.WWmap = (function () {
         })
     );
     render();
-    window.addEventListener("resize", () => {
-      clearTimeout(window.WWmapResize);
-      window.WWmapResize = setTimeout(render, 150);
-    });
+  }
+
+  /* Scales are derived from the #umap-view box, so the map has to re-fit
+     whenever the sidebar or the window changes its width. */
+  function relayout() {
+    if (group) render();
   }
 
   function highlight(page) {
@@ -109,5 +111,5 @@ window.WWmap = (function () {
         page && p.title === page.title ? radiusOf(p) * 1.5 : radiusOf(p));
   }
 
-  return { init, highlight };
+  return { init, highlight, relayout };
 })();

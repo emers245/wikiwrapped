@@ -14,8 +14,24 @@
     <button id="btn-umap" class="active">UMAP</button>
     <button id="btn-network">Network</button>
   </nav>
+  <button id="btn-panels" class="active" aria-expanded="true"
+          aria-controls="panels" title="Hide summary panels">Panels</button>
   <div id="summary-line">loading...</div>
 </header>
+
+<aside id="panels">
+  <div id="panels-inner">
+    <div class="panel" id="panel-categories">
+      <h2>Categories: you vs popular pages</h2><svg></svg>
+    </div>
+    <div class="panel" id="panel-daily">
+      <h2>Visits per day</h2><svg></svg>
+    </div>
+    <div class="panel" id="panel-hours">
+      <h2>Time of day</h2><svg></svg>
+    </div>
+  </div>
+</aside>
 
 <main id="viz">
   <div id="umap-view">
@@ -26,18 +42,6 @@
   <div id="viz-message" class="hidden"></div>
   <div id="popup" class="hidden"></div>
 </main>
-
-<footer id="panels">
-  <div class="panel" id="panel-categories">
-    <h2>Categories: you vs popular pages</h2><svg></svg>
-  </div>
-  <div class="panel" id="panel-daily">
-    <h2>Visits per day</h2><svg></svg>
-  </div>
-  <div class="panel" id="panel-hours">
-    <h2>Time of day</h2><svg></svg>
-  </div>
-</footer>
 
 <script src="/static/panels.js"></script>
 <script src="/static/map.js"></script>

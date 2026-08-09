@@ -109,5 +109,11 @@ window.WWnet = (function () {
     if (!page) clearClasses();
   }
 
-  return { init, show, highlight };
+  /* cytoscape caches its container size, so it needs telling when the
+     sidebar or the window changes the width of #network-view. */
+  function relayout() {
+    if (cy) cy.resize();
+  }
+
+  return { init, show, highlight, relayout };
 })();
