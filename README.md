@@ -95,9 +95,17 @@ served from `app/static/`) that loads everything once from
   rolling average, and visits by hour of day (device timezone).
   They sit in a left sidebar that the **Panels** button in the header
   stows and restores, so the map or network can have the full window.
-  The choice is remembered across reloads (`localStorage`), and below a
-  720px viewport the sidebar floats over the visualization as a drawer
-  instead of taking its own column.
+- **Resizing the panels**: drag the sidebar's right edge to scale them.
+  Width is the only control - each chart holds a fixed aspect ratio, so
+  widening enlarges the marks and the type together rather than giving
+  same-size text more room, and the sidebar scrolls once the panels no
+  longer fit the window. Panel size therefore does not follow the window
+  size; it is whatever you dragged it to. Double-click the edge to reset,
+  or focus it and use the arrow keys. Width and stow state are both
+  remembered across reloads (`localStorage`).
+
+Below a 720px viewport the sidebar floats over the visualization as a
+drawer instead of taking its own column, and the drag handle is hidden.
 
 The UMAP mode and the "popular" baseline require the reference space
 (`data/reference/`) and enriched pages (`POST /enrich`); without them the
@@ -106,36 +114,65 @@ app falls back to network mode only.
 ### Frontend layout contract
 
 The page is a two-column CSS grid: a full-width header over a sidebar
-column and the visualization. The sidebar's width lives on the sidebar
-element rather than in `grid-template-columns`, because an `auto` grid
-column follows an animated element width in every browser while an
-animated grid template does not.
+column and the visualization.
 
-Every view measures itself from its live container box and none of them
-notice a CSS-driven resize on their own, so each module exposes a
-`relayout()` that `main.js` calls from one debounced handler:
+`--panel-w` is the single source of truth for the sidebar's size, and the
+drag handle writes it as an inline custom property on the root element.
+Everything else reads `--panel-w-eff`, which is derived from it: the
+sidebar's width, the stow margin, the resizer's position, and the panel
+heading size all come from the derived one. That indirection exists so a
+media query can cap the width (the drawer's `86vw`) - an inline style
+outranks any stylesheet rule, so `--panel-w` itself cannot be overridden,
+but nothing ever writes the derived property inline.
+
+Stowing slides the sidebar out with a negative `margin-left` rather than
+animating its width to zero. An `auto` grid column measures the item's
+margin box, so the column still collapses, but the sidebar's width stays
+constant - which means the charts never reflow mid-slide and a scrollbar
+can never squeeze them. `body` needs `overflow: hidden` to clip the
+off-screen sidebar.
+
+The panel charts are drawn once into a fixed logical coordinate space
+(`LOGICAL_W` / `LOGICAL_H` in `panels.js`) and the SVG `viewBox` scales
+them to the current sidebar width. Two consequences worth knowing:
+
+- Resizing needs no redraw, so `WWpanels.relayout()` is deliberately a
+  no-op. The panels are resolution-independent by construction.
+- Font sizes and margins are in logical units, so they scale with the
+  panels. `AXIS_FONT` / `LABEL_FONT` / `LEGEND_FONT` and the `MARGIN` /
+  `CAT_MARGIN` objects set the *proportions*, not final pixel sizes:
+  raising a font still means raising its margin to match.
+
+The panel headings are HTML, not SVG, so they cannot ride the viewBox and
+are scaled arithmetically instead: `.panel h2` sizes itself from
+`--panel-w-eff` minus `--panel-chrome` (the padding and borders between
+the sidebar edge and the chart) over the same 320 logical units, which
+keeps them in lockstep with the SVG text. `--panel-chrome` has to be
+updated if that padding changes.
+
+Macro topic names too long for the label gutter are abbreviated by hand in
+`SHORT_LABELS` in `panels.js`; the character-count slice below it is only
+a fallback for topics that turn up in the reference sample without an
+entry, and a `<title>` always carries the full name.
+
+The other two views do measure their live container, so each exposes a
+`relayout()` that `main.js` calls from one handler:
 
 | module       | `relayout()` does                                     |
 |--------------|-------------------------------------------------------|
-| `panels.js`  | full D3 redraw (charts are sized from the SVG box)     |
+| `panels.js`  | nothing (see above)                                    |
 | `map.js`     | recomputes the equal-aspect scales and redraws         |
 | `network.js` | `cy.resize()` (cytoscape caches its container size)    |
 
-Add a view and it needs a `relayout()` too, or it will render at a stale
-width whenever the sidebar is toggled. The toggle redraws once the slide
-has settled; `SLIDE_MS` in `main.js` must match the `#panels` width
-transition in `style.css`.
+Add a view and it needs a `relayout()` too. It is called on window resize,
+once the stow animation settles (`SLIDE_MS` in `main.js` must match the
+`#panels` transition in `style.css`), and once per animation frame while
+the sidebar is being dragged - the drag fires far more often than the
+display refreshes, and the map redraws 10k backdrop points each time.
 
 The category chart is drawn with horizontal bars specifically so topic
 names stay readable in a narrow column, where rotated labels under
 vertical bars did not.
-
-Chart type sizes are the `AXIS_FONT` / `LABEL_FONT` / `LEGEND_FONT`
-constants at the top of `panels.js` (SVG text cannot be styled from
-`style.css` the way the panel headings are). The `MARGIN` and `CAT_MARGIN`
-objects beside them reserve room for that text, so raising a font size
-means raising the matching margin, and `--panel-w` in `style.css` sets how
-much width the labels have to fit in.
 
 ## Layout
 

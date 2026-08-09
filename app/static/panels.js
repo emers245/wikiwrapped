@@ -4,7 +4,15 @@
 
    The panels stack vertically in a narrow column, so the category chart
    runs horizontally: topic names read straight out along the left edge at
-   any panel width, where rotated labels under vertical bars did not. */
+   any panel width, where rotated labels under vertical bars did not.
+
+   Everything here is drawn once, in a fixed logical coordinate space, and
+   the SVG viewBox scales it to whatever width the sidebar currently has.
+   Two things follow from that. Dragging the sidebar edge scales the marks
+   and the type together, rather than giving the same-size text more room.
+   And panel size no longer depends on the window: the charts keep their
+   aspect ratio, the sidebar scrolls when they no longer fit, and a resize
+   needs no redraw at all. */
 
 window.WWpanels = (function () {
   let state = null;
@@ -22,23 +30,38 @@ window.WWpanels = (function () {
   // Horizontal bars: the left margin holds topic labels, not an axis.
   const CAT_MARGIN = { top: 16, right: 10, bottom: 22, left: 110 };
 
-  function panelSize(id) {
-    const rect = document.querySelector(`#${id} svg`).getBoundingClientRect();
-    return { w: Math.max(rect.width, 120), h: Math.max(rect.height, 80) };
+  // Logical drawing size. The width is shared so all three panels use one
+  // horizontal scale; the heights set each panel's aspect ratio, and the
+  // categories panel is taller because it has one row per macro topic.
+  const LOGICAL_W = 320;
+  const LOGICAL_H = { categories: 250, daily: 165, hours: 165 };
+
+  function panelSvg(id, logicalHeight) {
+    return d3.select(`#${id} svg`).html(null)
+      .attr("viewBox", `0 0 ${LOGICAL_W} ${logicalHeight}`)
+      .attr("preserveAspectRatio", "xMidYMid meet");
   }
 
+  /* Hand-written abbreviations for the macro topics too long to fit the
+     label gutter. The slice below is the fallback for anything new that
+     turns up in the reference sample; a <title> carries the full name. */
+  const SHORT_LABELS = {
+    "History and Society": "History/Society",
+    "Philosophy and religion": "Phil. & religion",
+  };
+
   function shortLabel(topic) {
-    let label = topic.replace(/^Culture\./, "");
-    if (label === "History and Society") label = "History/Society";
-    if (label.length > 17) label = label.slice(0, 16) + "...";
+    const label = topic.replace(/^Culture\./, "");
+    if (SHORT_LABELS[label]) return SHORT_LABELS[label];
+    if (label.length > 17) return label.slice(0, 16) + "...";
     return label;
   }
 
   /* -- categories --------------------------------------------------------- */
   function renderCategories() {
-    const { w, h } = panelSize("panel-categories");
-    const svg = d3.select("#panel-categories svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.categories;
+    const svg = panelSvg("panel-categories", h);
     cat.svg = svg;
 
     const user = {};
@@ -108,9 +131,9 @@ window.WWpanels = (function () {
 
   /* -- visits per day ------------------------------------------------------ */
   function renderDaily() {
-    const { w, h } = panelSize("panel-daily");
-    const svg = d3.select("#panel-daily svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.daily;
+    const svg = panelSvg("panel-daily", h);
     daily.svg = svg;
 
     const days = state.data.stats.daily.days.map(d => {
@@ -160,9 +183,9 @@ window.WWpanels = (function () {
 
   /* -- time of day --------------------------------------------------------- */
   function renderHours() {
-    const { w, h } = panelSize("panel-hours");
-    const svg = d3.select("#panel-hours svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.hours;
+    const svg = panelSvg("panel-hours", h);
     hours.svg = svg;
 
     const grid = state.data.stats.hour_grid.counts;   // 7 x 24
@@ -246,11 +269,10 @@ window.WWpanels = (function () {
     renderAll();
   }
 
-  /* Charts are sized from the live SVG box, so any change to the sidebar
-     width has to redraw them. main.js owns the debounce. */
-  function relayout() {
-    if (state) renderAll();
-  }
+  /* Nothing to do: the charts live in a fixed logical space and the
+     viewBox rescales them for free. Kept so every view answers the same
+     relayout() call from main.js. */
+  function relayout() {}
 
   return { init, highlight, relayout };
 })();
