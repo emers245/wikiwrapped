@@ -5,6 +5,8 @@
 #   ./run.sh                 start the server and open the dashboard
 #   ./run.sh --port 8080     use a different port
 #   ./run.sh --no-browser    start the server only
+#   ./run.sh --no-sync       skip the check-on-launch history sync
+#   ./run.sh --force-sync    sync even if one ran recently
 #
 # Finds the conda environment without needing "conda activate" first, waits
 # until the API answers, then opens a browser and hands the terminal back to
@@ -19,6 +21,8 @@ ENV_NAME="wikipedia-wrapped"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=8000
 OPEN_BROWSER=1
+SYNC=1
+FORCE_SYNC=0
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -28,10 +32,12 @@ usage() {
     cat <<'EOF'
 Launch the Wikipedia Wrapped dashboard.
 
-Usage: ./run.sh [--port N] [--no-browser]
+Usage: ./run.sh [--port N] [--no-browser] [--no-sync] [--force-sync]
 
   --port N        port to serve on (default 8000)
   --no-browser    start the server without opening a browser
+  --no-sync       skip the check-on-launch history sync
+  --force-sync    sync even if one ran recently (ignores the interval)
   -h, --help      show this message
 EOF
 }
@@ -45,6 +51,14 @@ while [ $# -gt 0 ]; do
             ;;
         --no-browser)
             OPEN_BROWSER=0
+            shift
+            ;;
+        --no-sync)
+            SYNC=0
+            shift
+            ;;
+        --force-sync)
+            FORCE_SYNC=1
             shift
             ;;
         -h|--help)
@@ -177,6 +191,28 @@ if is_our_server; then
     echo "Wikipedia Wrapped is already running at $URL - reusing it."
     open_browser
     exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Check-on-launch sync
+# ---------------------------------------------------------------------------
+# Runs as its own process before uvicorn, deliberately: the API module stays
+# free of import-time side effects (the test suite calls create_app directly),
+# and a sync that hangs or crashes cannot take the dashboard down with it.
+#
+# --on-launch makes app.sync respect the sync_on_launch gate in
+# config.local.toml and the minimum interval, so a relaunch shortly after a
+# sync costs nothing. "|| true" is the belt to that braces: app.sync already
+# exits 0 on handled errors, and this guarantees a serve even if it does not.
+
+if [ "$SYNC" -eq 1 ]; then
+    SYNC_ARGS="--on-launch"
+    if [ "$FORCE_SYNC" -eq 1 ]; then
+        SYNC_ARGS="--force"
+    fi
+    # shellcheck disable=SC2086
+    "$PYTHON" -m app.sync $SYNC_ARGS || \
+        echo "Sync did not complete; serving existing data." >&2
 fi
 
 echo "Starting Wikipedia Wrapped at $URL (Ctrl-C to stop)"

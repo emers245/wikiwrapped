@@ -38,6 +38,10 @@ These were decided deliberately. Do not deviate without flagging.
 | D6 | **Caching is first-class.** Embeddings, topic labels, and pageview counts are cached in the database keyed by title (+ date range where relevant). Re-running on an updated history only fetches what's new. |
 | D7 | **Pageview popularity is matched to the user's date range.** "How popular was this page with other readers" is measured over the same date range covered by the user's history, not all-time. |
 | D8 | **Python core, conda environment.** Core in Python. Dependencies in a pinned `environment.yml`. Building the env is step zero and must be verified before anything else (see §9). |
+| D9 | **The append-only log is the source of truth.** `data/visits.jsonl` holds one JSON record per raw visit (`url`, `title`, `timestamp`, `source`, `account`), is only ever appended to, and is deduped on read. `data/app.db` is a **derived, rebuildable** artifact. This exists because Chrome expires local history after ~90 days: whatever reached the log before the window rolled is the only surviving copy, so the log is the thing worth backing up. Every input source writes here first, and the DB is updated from it second. |
+| D10 | **Google Takeout is an input source alongside local Chrome, never a replacement.** Takeout exports at the *account* level (Chrome Sync has already merged every device), so it reaches past the 90-day limit and covers a second account and mobile. Drive access is **read-only** (`drive.readonly`) and the app never handles a Google password: an OAuth token is the only credential it holds. One token file per account under `tokens/`. Provenance lives in the `visit_sources` join table, not columns on `visits`, because one physical visit can legitimately arrive from both routes. The local-Chrome path must keep working with this disabled. |
+| D11 | **Cross-source dedup is measured, not assumed.** The same visit can arrive from both routes, and quiet duplicates would inflate every statistic. Dedup keys on the **canonical post-redirect title** (D5) plus a timestamp tolerance held in one constant, `app/dedup.py:DEDUP_TOLERANCE_S`. It ships at `0` (exact-second match). Raise it only on evidence from `scripts/compare_sources.py` run against a real Takeout archive; every second of slack risks merging genuine rapid revisits. |
+| D12 | **Check-on-launch sync, not a daemon.** `run.sh` runs `python -m app.sync --on-launch` as a separate process before uvicorn. No scheduler, no background process, and no import-time side effects in `app.api`. The sync **must never block or break startup**: every expected failure is caught, written to `data/sync_state.json`, surfaced on `GET /health`, and the dashboard serves existing data regardless. |
 
 ---
 
@@ -123,7 +127,14 @@ The extraction script produces a single JSON file. Proposed schema:
 ```
 
 Requirements for the extractor:
-- Handles the two timestamp conventions the old code juggled (Chrome `time_usec` = µs since 1601; Takeout `visitTime`/`lastVisitTime` = ms since 1970) and **normalizes all to UTC ISO-8601** in the output.
+- Handles the timestamp conventions in play and **normalizes all to UTC ISO-8601**:
+  Chrome SQLite `visits.visit_time` = us since **1601**; Takeout `time_usec` =
+  us since **1970** (a string); extension `visitTime`/`lastVisitTime` = ms since 1970.
+  **Corrected 2026-08-09 against a real archive:** Takeout `time_usec` is NOT the
+  1601 epoch, contrary to what the old reference scripts assumed. Reading it that
+  way puts every row in 1663 BC, where the plausibility check drops it, turning
+  2804 real Wikipedia visits into zero with no error. `usec_to_unix` now decodes
+  both readings and keeps the plausible one rather than hardcoding either.
 - **Cross-platform history-file location** (the old script hardcodes a macOS path — fix this: support macOS/Windows/Linux Chrome default profile paths, with an explicit `--input` override).
 - Copies the SQLite `History` DB to a temp file before reading (it's locked while Chrome runs) — the old code already does this; keep it.
 - Filters to Wikipedia hosts only.

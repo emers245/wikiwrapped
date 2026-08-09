@@ -15,6 +15,52 @@ DATA_DIR = PROJECT_ROOT / "data"
 REFERENCE_DIR = DATA_DIR / "reference"  # frozen UMAP reducer + reference embeddings (D4)
 DB_PATH = DATA_DIR / "app.db"
 
+# Append-only log of raw visits: the durable source of truth (D9). app.db is a
+# rebuildable derived artifact; this file is the thing worth backing up.
+# Under data/, which .gitignore excludes wholesale.
+VISIT_LOG_PATH = DATA_DIR / "visits.jsonl"
+
+# Last-sync bookkeeping for the check-on-launch pass, so a relaunch shortly
+# after a sync can no-op without touching the network.
+SYNC_STATE_PATH = DATA_DIR / "sync_state.json"
+
+# ---------------------------------------------------------------------------
+# Google Drive / Takeout integration (D10)
+# ---------------------------------------------------------------------------
+# Everything here is credentials or personal preference: all four paths are
+# git-ignored, and none of them is required for the local-Chrome path to work.
+LOCAL_CONFIG_PATH = PROJECT_ROOT / "config.local.toml"
+TOKEN_DIR = PROJECT_ROOT / "tokens"          # one OAuth token per account
+CLIENT_SECRET_GLOB = "client_secret*.json"   # downloaded from Cloud Console
+
+# Read-only, and deliberately the narrowest scope that can list and download
+# a Takeout archive. The app never asks for, receives, or stores a password;
+# the OAuth token is the only credential it ever holds.
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+
+# Takeout names its archives "takeout-YYYYMMDDTHHMMSSZ-<nnn>.zip". Matched
+# case-insensitively by prefix so a renamed-but-recognizable file still lands.
+TAKEOUT_NAME_PATTERN = "takeout"
+
+# Takeout delivers a new archive every 2 months at most, so a launch inside
+# this window skips the Drive round-trip entirely.
+MIN_SYNC_INTERVAL_HOURS = 24
+
+# Drive media downloads (files?alt=media) are noticeably less reliable than
+# the metadata API on some networks: the connection is accepted and then
+# never sends a byte, while metadata calls to the same host answer in
+# milliseconds. Measured on this machine 2026-08-09, a 54 KB archive failed
+# 3/3 times without an explicit gzip Accept-Encoding and 1/3 times with it.
+#
+# So: ask for gzip, keep the read timeout short enough that a dead
+# connection is abandoned quickly rather than burning a minute, and retry.
+# A slow-but-working link is not punished, because the timeout is per read,
+# not for the whole transfer.
+DRIVE_CONNECT_TIMEOUT_S = 10
+DRIVE_READ_TIMEOUT_S = 20
+DRIVE_DOWNLOAD_ATTEMPTS = 5
+DRIVE_DOWNLOAD_BACKOFF_S = 2.0
+
 # ---------------------------------------------------------------------------
 # Input schema (repo_spec S5)
 # ---------------------------------------------------------------------------

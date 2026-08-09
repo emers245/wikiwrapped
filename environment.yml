@@ -29,6 +29,12 @@ dependencies:
   - matplotlib-base=3.9.*
   # -- Session-network metrics (in/out-degree, PageRank)
   - networkx=3.*
+  # -- Google Drive / Takeout ingestion (read-only). Optional at runtime:
+  #    app/drive.py imports these lazily, so the local-Chrome path still
+  #    works in an environment that lacks them.
+  - google-api-python-client=2.*
+  - google-auth-oauthlib=1.*
+  - google-auth=2.*
   # -- API layer
   - fastapi=0.115.*
   - uvicorn=0.32.*

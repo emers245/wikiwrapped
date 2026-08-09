@@ -1,3 +1,14 @@
+# Google Desktop Client Key
+client_secret*.json
+
+# OAuth tokens, one per authorized account. These grant read-only Drive
+# access to a real Google account: never commit them.
+tokens/
+*.token.json
+
+# Local preferences (may name Google accounts)
+config.local.toml
+
 # Local data: database + reference-space artifacts (kept out of git; see repo_spec S4)
 data/*
 !data/reference/
@@ -6,6 +17,18 @@ data/reference/*
 
 # Personal contact email for Wikimedia API User-Agent (never published)
 contact_email.txt
+
+# Browsing history stays local and is never pushed (decision 2026-08-09).
+# The append-only log and the DB are already covered by the data/ rules
+# above; these cover extractor output and any archive left in the tree.
+# The files already tracked under reference_code/ predate this rule and are
+# deliberately left as they are.
+wikipedia_history.json
+*history*.json
+*History*.json
+takeout*.zip
+Takeout*.zip
+*.jsonl
 
 # Python
 __pycache__/

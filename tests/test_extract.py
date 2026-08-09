@@ -49,15 +49,64 @@ def test_to_iso_utc_rejects_implausible():
     assert eh.to_iso_utc(5_000_000_000) is None         # year 2128
 
 
+# 2026-08-09T03:40:04Z, comfortably inside the plausibility bounds.
+PLAUSIBLE_UNIX_S = 1_786_246_804
+
+
 def test_json_row_prefers_per_visit_time():
     # Export-extension rows carry both; visitTime is the per-visit one
     row = {"visitTime": 1_000_000.0, "lastVisitTime": 2_000_000.0}
     assert eh.json_row_to_unix(row) == 1_000.0
     assert eh.json_row_to_unix({"lastVisitTime": 2_000_000.0}) == 2_000.0
     # Takeout rows use time_usec
-    usec = (1_000 + eh.CHROME_EPOCH_OFFSET_S) * 1_000_000
-    assert eh.json_row_to_unix({"time_usec": usec}) == pytest.approx(1_000.0)
+    usec = (PLAUSIBLE_UNIX_S + eh.CHROME_EPOCH_OFFSET_S) * 1_000_000
+    assert eh.json_row_to_unix({"time_usec": usec}) == pytest.approx(
+        PLAUSIBLE_UNIX_S
+    )
     assert eh.json_row_to_unix({"id": "1"}) is None
+
+
+def test_time_usec_accepts_both_epochs():
+    """A real Takeout archive uses the UNIX epoch, older exports used 1601.
+
+    Verified against a real archive 2026-08-09: time_usec arrived as the
+    STRING "1786246804736335", which is microseconds since 1970. Reading it
+    as the 1601 epoch lands in 1663 BC, fails the plausibility check, and
+    silently drops every row -- which is exactly what happened before this
+    was measured.
+    """
+    as_unix = PLAUSIBLE_UNIX_S * 1_000_000
+    as_chromium = (PLAUSIBLE_UNIX_S + eh.CHROME_EPOCH_OFFSET_S) * 1_000_000
+
+    assert eh.usec_to_unix(as_unix) == pytest.approx(PLAUSIBLE_UNIX_S)
+    assert eh.usec_to_unix(as_chromium) == pytest.approx(PLAUSIBLE_UNIX_S)
+    # Takeout writes it as a string, not a number.
+    assert eh.usec_to_unix(str(as_unix)) == pytest.approx(PLAUSIBLE_UNIX_S)
+
+
+def test_time_usec_rejects_implausible_values():
+    assert eh.usec_to_unix(0) is None            # zeroed field
+    assert eh.usec_to_unix(-1) is None
+    assert eh.usec_to_unix("not a number") is None
+    assert eh.usec_to_unix(None) is None
+    # Year 1970 under both readings: too early to be real browsing.
+    assert eh.usec_to_unix(1_000 * 1_000_000) is None
+
+
+def test_real_takeout_row_shape_survives_the_pipeline():
+    """The exact row shape from a real archive must produce a visit."""
+    rows = eh.parse_history_payload({"Browser History": [{
+        "favicon_url": "https://en.wikipedia.org/static/favicon/wikipedia.ico",
+        "page_transition_qualifier": "CLIENT_REDIRECT",
+        "title": "Phanaeng - Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Phanaeng",
+        "time_usec": "1782607481693652",
+        "client_id": "UGh72fin4+G0FkTEFCpQxA==",
+    }]})
+    visits, counts = eh.build_visits(rows)
+    assert counts["bad_timestamp"] == 0
+    assert len(visits) == 1
+    assert visits[0]["timestamp"].startswith("2026-")
 
 
 # ---------------------------------------------------------------------------

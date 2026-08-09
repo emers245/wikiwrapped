@@ -43,6 +43,45 @@ CREATE TABLE IF NOT EXISTS visits (
 );
 CREATE INDEX IF NOT EXISTS idx_visits_timestamp ON visits (timestamp);
 
+-- Which mechanisms and accounts saw each visit (D10). A join table rather
+-- than columns on visits: one physical visit can arrive from both the local
+-- Chrome read and a Takeout export, and UNIQUE (page_id, timestamp) keeps
+-- only one visits row, so a single source column would silently record
+-- whichever landed first. Here both rows survive without inflating counts.
+--
+-- account is NOT NULL DEFAULT '' rather than nullable because SQLite treats
+-- NULLs as distinct in a unique index, which would let the same
+-- (visit, source) pair insert over and over. '' means "unknown account":
+-- the local Chrome reader cannot tell which account a profile is signed
+-- into without parsing Chrome's preferences.
+CREATE TABLE IF NOT EXISTS visit_sources (
+    visit_id INTEGER NOT NULL REFERENCES visits(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    account TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (visit_id, source, account)
+);
+CREATE INDEX IF NOT EXISTS idx_visit_sources_source
+    ON visit_sources (source, account);
+
+-- Takeout archives already ingested, so repeated syncs are idempotent.
+-- Files are never deleted from Drive, so every sync re-sees every archive
+-- and this table is what stops it re-downloading them.
+--
+-- Keyed on (file_id, modified_time), not on file_id alone: a re-uploaded
+-- archive keeps its ID but gets a new modified time and does need
+-- reprocessing. account is informational only, because Drive file IDs are
+-- globally unique; keying on it would reprocess an archive shared with a
+-- second authorized account.
+CREATE TABLE IF NOT EXISTS processed_archives (
+    file_id TEXT NOT NULL,
+    modified_time TEXT NOT NULL,
+    account TEXT NOT NULL DEFAULT '',
+    file_name TEXT,
+    ingested_at TEXT NOT NULL,
+    visits_extracted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (file_id, modified_time)
+);
+
 CREATE TABLE IF NOT EXISTS redirect_cache (
     raw_title TEXT PRIMARY KEY,
     canonical_title TEXT,
@@ -138,6 +177,190 @@ def insert_visits(
         [(page_id, stamp) for stamp in timestamps],
     )
     return conn.total_changes - before
+
+
+def attach_visit_sources(
+    conn: sqlite3.Connection,
+    page_id: int,
+    provenance: dict[str, list[dict]],
+) -> int:
+    """Record which sources/accounts saw each of a page's visits (D10).
+
+    provenance maps an ISO timestamp to [{"source": ..., "account": ...}].
+    Timestamps with no matching visits row are skipped: that means dedup
+    collapsed them onto a neighbouring second, and the surviving row already
+    carries the provenance.
+
+    Returns the number of (visit, source, account) rows newly inserted.
+    """
+    if not provenance:
+        return 0
+
+    stamps = list(provenance)
+    ids: dict[str, int] = {}
+    for start in range(0, len(stamps), 500):  # stay under SQLite's param cap
+        chunk = stamps[start:start + 500]
+        placeholders = ",".join("?" * len(chunk))
+        for row in conn.execute(
+            f"SELECT id, timestamp FROM visits "
+            f"WHERE page_id = ? AND timestamp IN ({placeholders})",
+            [page_id, *chunk],
+        ):
+            ids[row["timestamp"]] = row["id"]
+
+    rows = [
+        (ids[stamp], entry["source"], entry.get("account") or "")
+        for stamp, entries in provenance.items()
+        if stamp in ids
+        for entry in entries
+        if entry.get("source")
+    ]
+    if not rows:
+        return 0
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT OR IGNORE INTO visit_sources (visit_id, source, account) "
+        "VALUES (?, ?, ?)",
+        rows,
+    )
+    return conn.total_changes - before
+
+
+def compact_visit_sources(conn: sqlite3.Connection) -> int:
+    """Drop account-less provenance rows superseded by an accounted one.
+
+    The mirror of visitlog.compact(). A visit first recorded without an
+    account (an import that carried no profile information) and later
+    re-recorded with one ends up with both rows, and the empty one is the
+    less specific version of the same observation, so it double-counts in
+    visit_source_summary.
+
+    Only removes a row when the SAME visit and SAME source also has a real
+    account. Two different accounts on one visit are both genuine and kept.
+    Returns the number of rows removed.
+    """
+    before = conn.total_changes
+    conn.execute(
+        """
+        DELETE FROM visit_sources
+        WHERE account = ''
+          AND EXISTS (
+              SELECT 1 FROM visit_sources AS other
+              WHERE other.visit_id = visit_sources.visit_id
+                AND other.source = visit_sources.source
+                AND other.account <> ''
+          )
+        """
+    )
+    return conn.total_changes - before
+
+
+def visits_without_provenance(conn: sqlite3.Connection) -> list[dict]:
+    """Visits with no visit_sources row: present in the DB but not the log.
+
+    These predate the append-only log, so the DB is currently their only
+    copy and deleting app.db would lose them. Returned as
+    (canonical_title, timestamp) so the log can be backfilled.
+    """
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT pages.canonical_title, pages.raw_title, visits.timestamp
+            FROM visits JOIN pages ON pages.id = visits.page_id
+            WHERE visits.id NOT IN (SELECT visit_id FROM visit_sources)
+            ORDER BY visits.timestamp
+            """
+        )
+    ]
+
+
+def visit_source_summary(conn: sqlite3.Connection) -> list[dict]:
+    """Per (source, account): how many visits it accounts for.
+
+    Rows sum to more than the visit count when two mechanisms saw the same
+    visit, which is the point of the table.
+    """
+    return [
+        dict(row)
+        for row in conn.execute(
+            """
+            SELECT source, account, COUNT(*) AS visits
+            FROM visit_sources
+            GROUP BY source, account
+            ORDER BY source, account
+            """
+        )
+    ]
+
+
+def visit_sources_for(conn: sqlite3.Connection, visit_id: int) -> list[dict]:
+    return [
+        {"source": row["source"], "account": row["account"] or None}
+        for row in conn.execute(
+            "SELECT source, account FROM visit_sources WHERE visit_id = ? "
+            "ORDER BY source, account",
+            (visit_id,),
+        )
+    ]
+
+
+def count_multi_source_visits(conn: sqlite3.Connection) -> int:
+    """Visits seen by more than one source: the dedup work actually done."""
+    return conn.execute(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT visit_id FROM visit_sources
+            GROUP BY visit_id HAVING COUNT(DISTINCT source) > 1
+        )
+        """
+    ).fetchone()[0]
+
+
+# ---------------------------------------------------------------------------
+# processed_archives (D10): what makes repeated Takeout syncs idempotent
+# ---------------------------------------------------------------------------
+
+def is_archive_processed(
+    conn: sqlite3.Connection, file_id: str, modified_time: str
+) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM processed_archives WHERE file_id = ? AND modified_time = ?",
+        (file_id, modified_time),
+    ).fetchone()
+    return row is not None
+
+
+def record_processed_archive(
+    conn: sqlite3.Connection,
+    file_id: str,
+    modified_time: str,
+    account: str | None,
+    file_name: str | None,
+    visits_extracted: int,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO processed_archives "
+        "(file_id, modified_time, account, file_name, ingested_at, "
+        " visits_extracted) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            file_id,
+            modified_time,
+            account or "",
+            file_name,
+            utcnow_iso(),
+            visits_extracted,
+        ),
+    )
+
+
+def processed_archives(conn: sqlite3.Connection) -> list[dict]:
+    return [
+        dict(row)
+        for row in conn.execute(
+            "SELECT * FROM processed_archives ORDER BY ingested_at DESC"
+        )
+    ]
 
 
 def refresh_visit_counts(conn: sqlite3.Connection) -> None:
