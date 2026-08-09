@@ -97,6 +97,150 @@ window.WW = (function () {
   btnUmap.addEventListener("click", () => setMode("umap"));
   btnNet.addEventListener("click", () => setMode("network"));
 
+  /* -- layout bus ---------------------------------------------------------- */
+  /* Every view sizes itself from its live container box, and none of them
+     hear about a CSS-driven width change on their own. One debounced
+     handler here re-fits whichever ones have been initialized. */
+  const STOWED_KEY = "ww.panelsStowed";
+  const SLIDE_MS = 250;           // must match the #panels width transition
+  const btnPanels = document.getElementById("btn-panels");
+  let relayoutTimer = null;
+
+  function relayoutAll() {
+    if (window.WWpanels) WWpanels.relayout();
+    if (window.WWmap) WWmap.relayout();
+    if (window.WWnet) WWnet.relayout();
+  }
+
+  function relayoutSoon(delay) {
+    clearTimeout(relayoutTimer);
+    relayoutTimer = setTimeout(relayoutAll, delay);
+  }
+
+  window.addEventListener("resize", () => relayoutSoon(150));
+
+  /* -- panels toggle ------------------------------------------------------- */
+  function setPanelsStowed(stowed) {
+    document.body.classList.toggle("panels-stowed", stowed);
+    btnPanels.classList.toggle("active", !stowed);
+    btnPanels.setAttribute("aria-expanded", String(!stowed));
+    btnPanels.title = stowed ? "Show summary panels" : "Hide summary panels";
+    try {
+      localStorage.setItem(STOWED_KEY, stowed ? "1" : "0");
+    } catch (err) {
+      /* private browsing or a file:// origin: the preference just does not
+         persist, which is not worth interrupting the page for. */
+    }
+    // Redraw once the slide has settled, on the final width.
+    relayoutSoon(SLIDE_MS + 30);
+  }
+
+  btnPanels.addEventListener("click", () =>
+    setPanelsStowed(!document.body.classList.contains("panels-stowed")));
+
+  /* -- panels resize handle ------------------------------------------------ */
+  /* Drag the sidebar edge to scale the panels. Width is the only input:
+     each chart keeps a fixed aspect ratio, so widening makes the figures
+     and their type bigger, and the sidebar scrolls once they stop fitting.
+     Everything downstream reads the --panel-w custom property. */
+  const WIDTH_KEY = "ww.panelWidth";
+  const KEY_STEP_PX = 20;
+  const resizer = document.getElementById("panels-resizer");
+  const rootStyle = document.documentElement.style;
+  let defaultWidth = null;      // the stylesheet value, captured before we
+                                // ever write an inline override
+  let pendingFrame = null;
+
+  function widthBounds() {
+    const css = getComputedStyle(document.documentElement);
+    return {
+      min: parseFloat(css.getPropertyValue("--panel-w-min")) || 260,
+      max: parseFloat(css.getPropertyValue("--panel-w-max")) || 720,
+    };
+  }
+
+  function currentWidth() {
+    return parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--panel-w")
+    );
+  }
+
+  function setPanelWidth(px, persist) {
+    const { min, max } = widthBounds();
+    const width = Math.round(Math.min(Math.max(px, min), max));
+    rootStyle.setProperty("--panel-w", width + "px");
+    if (persist) {
+      try {
+        localStorage.setItem(WIDTH_KEY, String(width));
+      } catch (err) {
+        /* see the stow-state note above */
+      }
+    }
+    // Coalesce to one relayout per frame: the map redraws 10k backdrop
+    // points and a drag fires far more often than the display refreshes.
+    if (pendingFrame === null) {
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        relayoutAll();
+      });
+    }
+  }
+
+  resizer.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = currentWidth();
+    resizer.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing");
+
+    const onMove = moveEvent =>
+      setPanelWidth(startWidth + (moveEvent.clientX - startX), false);
+    const onUp = () => {
+      resizer.removeEventListener("pointermove", onMove);
+      resizer.removeEventListener("pointerup", onUp);
+      resizer.removeEventListener("pointercancel", onUp);
+      document.body.classList.remove("resizing");
+      setPanelWidth(currentWidth(), true);   // persist the final width only
+    };
+    resizer.addEventListener("pointermove", onMove);
+    resizer.addEventListener("pointerup", onUp);
+    resizer.addEventListener("pointercancel", onUp);
+  });
+
+  // Double-click restores the width the stylesheet shipped with.
+  resizer.addEventListener("dblclick", () => setPanelWidth(defaultWidth, true));
+
+  resizer.addEventListener("keydown", event => {
+    const step = event.key === "ArrowLeft" ? -KEY_STEP_PX
+      : event.key === "ArrowRight" ? KEY_STEP_PX : 0;
+    if (!step) return;
+    event.preventDefault();
+    setPanelWidth(currentWidth() + step, true);
+  });
+
+  /* Restore the saved state before boot() measures anything, so the first
+     render already uses the correct panel width. The no-anim class keeps a
+     stowed sidebar from visibly sliding shut on page load. */
+  (function restorePanelsState() {
+    defaultWidth = currentWidth();
+
+    let savedStowed = null;
+    let savedWidth = null;
+    try {
+      savedStowed = localStorage.getItem(STOWED_KEY);
+      savedWidth = localStorage.getItem(WIDTH_KEY);
+    } catch (err) {
+      /* see above */
+    }
+    document.body.classList.add("no-anim");
+    if (savedWidth !== null && !Number.isNaN(parseFloat(savedWidth))) {
+      setPanelWidth(parseFloat(savedWidth), false);
+    }
+    setPanelsStowed(savedStowed === "1");
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => document.body.classList.remove("no-anim")));
+  })();
+
   /* -- boot ---------------------------------------------------------------- */
   async function boot() {
     const response = await fetch("/dashboard");

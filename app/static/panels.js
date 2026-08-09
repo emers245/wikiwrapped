@@ -1,31 +1,67 @@
-/* Bottom statistics panels (D3): grouped category bars (you vs popular
+/* Sidebar statistics panels (D3): grouped category bars (you vs popular
    pages), visits per day, and visits by hour of day. On node hover the
-   irrelevant parts fade and visit markers appear on the time panels. */
+   irrelevant parts fade and visit markers appear on the time panels.
+
+   The panels stack vertically in a narrow column, so the category chart
+   runs horizontally: topic names read straight out along the left edge at
+   any panel width, where rotated labels under vertical bars did not.
+
+   Everything here is drawn once, in a fixed logical coordinate space, and
+   the SVG viewBox scales it to whatever width the sidebar currently has.
+   Two things follow from that. Dragging the sidebar edge scales the marks
+   and the type together, rather than giving the same-size text more room.
+   And panel size no longer depends on the window: the charts keep their
+   aspect ratio, the sidebar scrolls when they no longer fit, and a resize
+   needs no redraw at all. */
 
 window.WWpanels = (function () {
   let state = null;
   const cat = {};    // {svg, groups}
   const daily = {};  // {svg, x, y, plotHeight, markerLayer}
   const hours = {};  // {svg, x, y, plotHeight, markerLayer}
-  const MARGIN = { top: 6, right: 12, bottom: 30, left: 34 };
+  // Type sizes for the chart interiors. The panel headings are styled in
+  // style.css; these are SVG text, so they live here. Margins below are
+  // sized to fit them: raising a font size means raising its margin too.
+  const AXIS_FONT = 10;
+  const LABEL_FONT = 10.5;
+  const LEGEND_FONT = 9.5;
 
-  function panelSize(id) {
-    const rect = document.querySelector(`#${id} svg`).getBoundingClientRect();
-    return { w: Math.max(rect.width, 120), h: Math.max(rect.height, 80) };
+  const MARGIN = { top: 6, right: 12, bottom: 34, left: 40 };
+  // Horizontal bars: the left margin holds topic labels, not an axis.
+  const CAT_MARGIN = { top: 16, right: 10, bottom: 22, left: 110 };
+
+  // Logical drawing size. The width is shared so all three panels use one
+  // horizontal scale; the heights set each panel's aspect ratio, and the
+  // categories panel is taller because it has one row per macro topic.
+  const LOGICAL_W = 320;
+  const LOGICAL_H = { categories: 250, daily: 165, hours: 165 };
+
+  function panelSvg(id, logicalHeight) {
+    return d3.select(`#${id} svg`).html(null)
+      .attr("viewBox", `0 0 ${LOGICAL_W} ${logicalHeight}`)
+      .attr("preserveAspectRatio", "xMidYMid meet");
   }
 
+  /* Hand-written abbreviations for the macro topics too long to fit the
+     label gutter. The slice below is the fallback for anything new that
+     turns up in the reference sample; a <title> carries the full name. */
+  const SHORT_LABELS = {
+    "History and Society": "History/Society",
+    "Philosophy and religion": "Phil. & religion",
+  };
+
   function shortLabel(topic) {
-    let label = topic.replace(/^Culture\./, "");
-    if (label === "History and Society") label = "History/Society";
-    if (label.length > 14) label = label.slice(0, 13) + "...";
+    const label = topic.replace(/^Culture\./, "");
+    if (SHORT_LABELS[label]) return SHORT_LABELS[label];
+    if (label.length > 17) return label.slice(0, 16) + "...";
     return label;
   }
 
   /* -- categories --------------------------------------------------------- */
   function renderCategories() {
-    const { w, h } = panelSize("panel-categories");
-    const svg = d3.select("#panel-categories svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.categories;
+    const svg = panelSvg("panel-categories", h);
     cat.svg = svg;
 
     const user = {};
@@ -41,61 +77,63 @@ window.WWpanels = (function () {
     const topics = [...new Set([...Object.keys(user), ...Object.keys(popular)])]
       .sort((a, b) => (user[b] || 0) - (user[a] || 0) || a.localeCompare(b));
 
-    const x = d3.scaleBand().domain(topics)
-      .range([MARGIN.left, w - MARGIN.right]).paddingInner(0.3).paddingOuter(0.1);
-    const yMax = d3.max(topics, t => Math.max(user[t] || 0, popular[t] || 0)) || 1;
-    const y = d3.scaleLinear().domain([0, yMax]).nice()
-      .range([h - MARGIN.bottom, MARGIN.top]);
+    const y = d3.scaleBand().domain(topics)
+      .range([CAT_MARGIN.top, h - CAT_MARGIN.bottom])
+      .paddingInner(0.28).paddingOuter(0.1);
+    const xMax = d3.max(topics, t => Math.max(user[t] || 0, popular[t] || 0)) || 1;
+    const x = d3.scaleLinear().domain([0, xMax]).nice()
+      .range([CAT_MARGIN.left, w - CAT_MARGIN.right]);
 
     svg.append("g")
-      .attr("transform", `translate(${MARGIN.left},0)`)
-      .call(d3.axisLeft(y).ticks(3, "~%"))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("transform", `translate(0,${h - CAT_MARGIN.bottom})`)
+      .call(d3.axisBottom(x).ticks(3, "~%").tickSizeOuter(0))
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
-    const half = x.bandwidth() / 2;
+    const half = y.bandwidth() / 2;
     cat.groups = svg.append("g").selectAll("g")
       .data(topics).join("g")
       .attr("class", "dimmable")
       .attr("data-topic", t => t);
 
     cat.groups.append("rect")   // you
-      .attr("x", t => x(t))
-      .attr("y", t => y(user[t] || 0))
-      .attr("width", half)
-      .attr("height", t => y(0) - y(user[t] || 0))
+      .attr("x", x(0))
+      .attr("y", t => y(t))
+      .attr("width", t => x(user[t] || 0) - x(0))
+      .attr("height", half)
       .attr("fill", t => WW.colorFor(t));
     cat.groups.append("rect")   // popular pages baseline
-      .attr("x", t => x(t) + half)
-      .attr("y", t => y(popular[t] || 0))
-      .attr("width", half)
-      .attr("height", t => y(0) - y(popular[t] || 0))
+      .attr("x", x(0))
+      .attr("y", t => y(t) + half)
+      .attr("width", t => x(popular[t] || 0) - x(0))
+      .attr("height", half)
       .attr("fill", t => WW.hexToRgba(WW.colorFor(t), 0.45));
     cat.groups.append("text")
-      .attr("x", t => x(t) + half)
-      .attr("y", h - MARGIN.bottom + 8)
-      .attr("transform", t =>
-        `rotate(-28, ${x(t) + half}, ${h - MARGIN.bottom + 8})`)
+      .attr("x", CAT_MARGIN.left - 5)
+      .attr("y", t => y(t) + y.bandwidth() / 2)
+      .attr("dy", "0.32em")
       .attr("text-anchor", "end")
-      .attr("font-size", 7.5)
+      .attr("font-size", LABEL_FONT)
       .attr("fill", "#6b6a64")
-      .text(shortLabel);
+      .text(shortLabel)
+      .append("title")            // full name when the label is truncated
+      .text(t => t);
 
     const legend = svg.append("g")
-      .attr("transform", `translate(${w - MARGIN.right - 92}, ${MARGIN.top})`)
-      .attr("font-size", 8).attr("fill", "#8a8880");
-    legend.append("rect").attr("width", 8).attr("height", 8)
+      .attr("transform", `translate(${CAT_MARGIN.left}, 1)`)
+      .attr("font-size", LEGEND_FONT).attr("fill", "#8a8880");
+    legend.append("rect").attr("width", 9).attr("height", 9)
       .attr("fill", "#8a8880");
-    legend.append("text").attr("x", 11).attr("y", 7).text("you");
-    legend.append("rect").attr("x", 38).attr("width", 8).attr("height", 8)
+    legend.append("text").attr("x", 13).attr("y", 8).text("you");
+    legend.append("rect").attr("x", 44).attr("width", 9).attr("height", 9)
       .attr("fill", WW.hexToRgba("#8a8880", 0.45));
-    legend.append("text").attr("x", 49).attr("y", 7).text("popular");
+    legend.append("text").attr("x", 57).attr("y", 8).text("popular");
   }
 
   /* -- visits per day ------------------------------------------------------ */
   function renderDaily() {
-    const { w, h } = panelSize("panel-daily");
-    const svg = d3.select("#panel-daily svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.daily;
+    const svg = panelSvg("panel-daily", h);
     daily.svg = svg;
 
     const days = state.data.stats.daily.days.map(d => {
@@ -116,12 +154,12 @@ window.WWpanels = (function () {
 
     svg.append("g")
       .attr("transform", `translate(0,${h - MARGIN.bottom})`)
-      .call(d3.axisBottom(x).ticks(4).tickSizeOuter(0))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .call(d3.axisBottom(x).ticks(3).tickSizeOuter(0))
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
     svg.append("g")
       .attr("transform", `translate(${MARGIN.left},0)`)
       .call(d3.axisLeft(y).ticks(3))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
     const content = svg.append("g").attr("class", "dimmable");
     daily.content = content;
@@ -145,9 +183,9 @@ window.WWpanels = (function () {
 
   /* -- time of day --------------------------------------------------------- */
   function renderHours() {
-    const { w, h } = panelSize("panel-hours");
-    const svg = d3.select("#panel-hours svg").html(null)
-      .attr("viewBox", `0 0 ${w} ${h}`);
+    const w = LOGICAL_W;
+    const h = LOGICAL_H.hours;
+    const svg = panelSvg("panel-hours", h);
     hours.svg = svg;
 
     const grid = state.data.stats.hour_grid.counts;   // 7 x 24
@@ -166,11 +204,11 @@ window.WWpanels = (function () {
       .attr("transform", `translate(0,${h - MARGIN.bottom})`)
       .call(d3.axisBottom(x).tickValues([0, 6, 12, 18, 24])
         .tickFormat(v => `${v}:00`).tickSizeOuter(0))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
     svg.append("g")
       .attr("transform", `translate(${MARGIN.left},0)`)
       .call(d3.axisLeft(y).ticks(3))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
     const barWidth = (x(1) - x(0)) * 0.8;
     hours.content = svg.append("g").attr("class", "dimmable");
@@ -229,11 +267,12 @@ window.WWpanels = (function () {
   function init(appState) {
     state = appState;
     renderAll();
-    window.addEventListener("resize", () => {
-      clearTimeout(window.WWpanelsResize);
-      window.WWpanelsResize = setTimeout(renderAll, 150);
-    });
   }
 
-  return { init, highlight };
+  /* Nothing to do: the charts live in a fixed logical space and the
+     viewBox rescales them for free. Kept so every view answers the same
+     relayout() call from main.js. */
+  function relayout() {}
+
+  return { init, highlight, relayout };
 })();

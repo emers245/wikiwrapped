@@ -5,6 +5,22 @@
   --ink-soft: #8a8880;
   --accent: #7295b8;
   --line: #e2dfd8;
+  /* Sidebar width. Set by the drag handle at runtime and persisted, so
+     treat this as the single source of truth for how wide the panels are:
+     the charts scale to it, and #panels-resizer is positioned from it. */
+  --panel-w: 360px;
+  --panel-w-min: 260px;
+  --panel-w-max: 720px;
+  /* The width actually used for layout. Derived rather than set by the
+     drag handle, so a media query can cap it: JS only ever writes
+     --panel-w inline, and an inline style would outrank any :root rule
+     trying to override that one directly. */
+  --panel-w-eff: var(--panel-w);
+  /* Sidebar width minus everything between it and the chart: the sidebar's
+     own padding (2 x 10), each panel's padding (2 x 10) and border (2 x 1).
+     Used to scale the panel headings in step with the SVG contents. */
+  --panel-chrome: 42px;
+  --header-h: 52px;
 }
 
 * { box-sizing: border-box; }
@@ -18,12 +34,18 @@ html, body {
 }
 
 body {
+  position: relative;          /* anchors the sidebar in narrow-screen mode */
   display: grid;
-  grid-template-rows: 52px 1fr 230px;
+  grid-template-columns: auto 1fr;   /* auto column tracks the sidebar width */
+  grid-template-rows: var(--header-h) 1fr;
+  overflow: hidden;            /* clips the sidebar when it slides out left */
 }
+/* Dragging the resizer must not select the header text it passes over. */
+body.resizing { user-select: none; cursor: col-resize; }
 
 /* -- header ------------------------------------------------------------- */
 header {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -52,10 +74,24 @@ header h1 {
   color: #fff;
 }
 #mode-toggle button:disabled { opacity: 0.4; cursor: default; }
+#btn-panels {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--ink-soft);
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#btn-panels.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 #summary-line { margin-left: auto; font-size: 13px; color: var(--ink-soft); }
 
 /* -- main viz ----------------------------------------------------------- */
-#viz { position: relative; overflow: hidden; }
+#viz { grid-column: 2; grid-row: 2; position: relative; overflow: hidden; }
 #umap-view, #network-view { position: absolute; inset: 0; }
 #backdrop, #umap-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 #backdrop { transition: opacity 0.25s; }
@@ -94,15 +130,63 @@ header h1 {
 #popup td { padding: 1px 0; }
 #popup td:first-child { color: var(--ink-soft); padding-right: 12px; }
 
-/* -- bottom panels ------------------------------------------------------ */
+/* -- sidebar panels ----------------------------------------------------- */
+/* Stowing slides the sidebar out with a negative margin rather than
+   animating its width to zero. An "auto" grid column measures the item's
+   margin box, so width + negative margin still collapses the column, and
+   holding the width constant means the charts never reflow mid-slide and
+   a scrollbar can never squeeze them. */
 #panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
-  padding: 8px 12px 10px;
+  grid-column: 1;
+  grid-row: 2;
+  width: var(--panel-w-eff);
+  margin-left: 0;
+  overflow-x: hidden;
+  overflow-y: auto;            /* scroll when the panels outgrow the window */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   background: var(--panel-bg);
-  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  transition: margin-left 0.25s ease;
 }
+body.panels-stowed #panels {
+  margin-left: calc(-1 * var(--panel-w-eff));
+  border-right: none;
+}
+body.no-anim #panels { transition: none; }   /* suppress the load-time slide */
+/* No transition while dragging: the width must track the pointer exactly. */
+body.resizing #panels { transition: none; }
+
+#panels-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+/* -- sidebar resize handle ---------------------------------------------- */
+/* Fixed, not absolute: an absolutely positioned grid child with a definite
+   grid-row would resolve its offsets against that grid area instead of the
+   viewport (see the drawer note below). */
+#panels-resizer {
+  position: fixed;
+  top: var(--header-h);
+  bottom: 0;
+  left: calc(var(--panel-w-eff) - 3px);
+  width: 7px;
+  z-index: 6;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+#panels-resizer:hover,
+#panels-resizer:focus-visible,
+body.resizing #panels-resizer { background: var(--accent); outline: none; }
+body.panels-stowed #panels-resizer { display: none; }
+
+/* -- individual panels --------------------------------------------------- */
+/* Panels take their natural height: each SVG has a fixed aspect ratio, so
+   height follows the sidebar width and the column scrolls if that overflows. */
 .panel {
   background: var(--bg);
   border: 1px solid var(--line);
@@ -110,14 +194,50 @@ header h1 {
   padding: 6px 10px 4px;
   display: flex;
   flex-direction: column;
+  flex: none;
   min-width: 0;
 }
+/* Scales with the panels, like the SVG text does. 13px is the size at the
+   default 360px sidebar; the chart interior is 320 logical units wide, so
+   dividing by 320 puts the heading on the same scale as AXIS_FONT and the
+   other constants in panels.js. */
 .panel h2 {
   margin: 0 0 2px;
-  font-size: 12px;
+  font-size: calc((var(--panel-w-eff) - var(--panel-chrome)) * 13 / 320);
   font-weight: 600;
   color: var(--ink-soft);
 }
-.panel svg { flex: 1; width: 100%; min-height: 0; }
+/* Height comes from the viewBox aspect ratio in panels.js, not from CSS. */
+.panel svg { display: block; width: 100%; height: auto; }
 .panel .dimmable { transition: opacity 0.2s; }
 .panel .marker { stroke: var(--ink); stroke-width: 1.2; opacity: 0.8; }
+
+/* -- narrow screens ----------------------------------------------------- */
+/* Too little room to give the sidebar its own column, so it floats over
+   the visualization as a drawer instead. Taking it out of the grid flow
+   collapses the auto column to zero, which hands the full width to #viz.
+   Position is fixed rather than absolute on purpose: an absolutely
+   positioned grid child that has a definite grid-row resolves its offsets
+   against that grid area, so a top of --header-h would land one header
+   below the header. Fixed always resolves against the viewport. */
+   The drag handle is hidden here and a width dragged out on a large
+   window is capped against the viewport instead. Capping --panel-w-eff
+   rather than --panel-w is what makes this work: the drag handle writes
+   --panel-w as an inline style on the root, which no rule here could
+   override, but nothing ever writes the derived property inline. */
+@media (max-width: 720px) {
+  :root { --panel-w-eff: min(var(--panel-w), 86vw); }
+  #panels {
+    position: fixed;
+    top: var(--header-h);
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    border-right: 1px solid var(--line);
+    box-shadow: 2px 0 12px rgba(60, 55, 40, 0.12);
+  }
+  #panels-resizer { display: none; }
+  header { gap: 12px; padding: 0 12px; }
+  header h1 { font-size: 15px; }
+  #summary-line { display: none; }
+}
