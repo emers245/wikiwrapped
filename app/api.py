@@ -31,7 +31,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
-from app import (embeddings, ingest, network, pageviews, stats, storage,
+from app import (embeddings, ingest, network, pageviews, stats, storage, sync,
                  topics, umap_space)
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -138,12 +138,24 @@ def create_app(
             reference = umap_space.load_meta(reference_dir)
         except FileNotFoundError:
             reference = None
+        # Sync state is read from the file the launcher's sync pass wrote,
+        # not recomputed: /health must stay cheap and must never touch the
+        # network. "reauthorize" naming an account is the signal the UI wants.
+        state = sync.load_state()
         return {
             "status": "ok",
             "database": str(db_path),
             "pages": storage.count_pages(conn),
             "visits": storage.count_visits(conn),
             "reference_space": reference,
+            "sources": storage.visit_source_summary(conn),
+            "sync": {
+                "last_attempt": state.get("last_attempt"),
+                "last_success": state.get("last_success"),
+                "ok": state.get("ok"),
+                "errors": state.get("errors", []),
+                "reauthorize": state.get("reauthorize", []),
+            },
         }
 
     @app.post("/ingest")

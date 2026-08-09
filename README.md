@@ -28,26 +28,323 @@ echo "you@example.com" > contact_email.txt          # git-ignored file at repo r
 ## Usage (Phase 1 pipeline)
 
 ```bash
-# 1. Extract Wikipedia visits from your browser history (stdlib-only)
-python extract/extract_history.py --output wikipedia_history.json
+# 1. Capture your Wikipedia visits into the append-only log and the database
+python -m app.sync --force
 
 # 2. One-time: build the frozen UMAP reference space (hours at full scale;
 #    resumable; use --head/--tail for small test builds)
 python scripts/build_reference_space.py
 
-# 3. Serve + open the dashboard
+# 3. Serve + open the dashboard (syncs first; see "check-on-launch" below)
 ./run.sh
 ```
 
+`app.sync` reads every local Chrome profile, plus any Google Takeout archive
+if that integration is enabled, and writes what it finds to the log before
+updating the database.
+
+### Which Chrome profiles are read
+
+All of them, by default. The signed-in profile is often not `Default`, so
+reading only that one silently captures nothing: on a typical machine the
+browsing lives in `Profile 1` or `Profile 2`. Each visit is attributed to
+that profile's signed-in account, read from Chrome's `Local State`.
+
+`scripts/setup_takeout.py` lists your profiles with their display names,
+accounts, and Wikipedia visit counts, and lets you narrow the selection if
+you want only some of them. The choice is stored as directory names, which
+are stable when a profile is renamed:
+
+```toml
+[local]
+chrome_profiles = []                      # empty = all profiles
+# chrome_profiles = ["Profile 1"]         # or name the ones you want
+```
+
+Entries match either the directory name (`Profile 1`) or the display name
+(`Work`), case-insensitively. If nothing matches, the sync says so and lists
+what is available rather than quietly logging zero visits.
+
+The standalone extractor is still there and still the only code that knows
+about browser-specific formats. Use it to inspect a single source, or to
+convert an archive by hand:
+
+```bash
+python extract/extract_history.py --output wikipedia_history.json  # local Chrome
+python extract/extract_history.py --input takeout-20260809T120000Z-001.zip
+python extract/extract_history.py --input export.json
+```
+
+### Where your history is stored
+
+`data/visits.jsonl` is an append-only log with one JSON record per raw visit
+(`url`, `title`, `timestamp`, `source`, `account`). It is the source of
+truth; `data/app.db` is derived from it and can be deleted and rebuilt with
+`python -m app.sync --rebuild`.
+
+**This distinction matters.** Chrome expires local history after about 90
+days, and Takeout archives can be deleted from Drive at any time. The log is
+the app's own permanent record: once a visit reaches it, deleting local
+Chrome history, the archives, or `app.db` cannot lose it. It is the one file
+worth backing up. Both are under `data/`, which is git-ignored.
+
+**Browsing history never leaves this machine.** The log, the database, the
+extractor's output, and any Takeout archive in the tree are all git-ignored,
+so none of it can be pushed to a remote. (The JSON files under
+`reference_code/` predate this rule and are already public; they are left
+as they are.)
+
+### Not all history is equally recoverable
+
+Two sources, two very different durability stories, and it is worth knowing
+which of your visits are which:
+
+| Source | If the log were lost |
+|---|---|
+| Takeout account | Recoverable. Request a fresh export; it reaches back a year. |
+| Local-only Chrome profile | **Gone.** Chrome keeps ~90 days and nothing else has a copy. |
+
+A Google Workspace account whose administrator disables Takeout can only
+ever be a local-Chrome source, so its history has no second copy anywhere.
+For those profiles the append-only log is not a convenience, it is the
+archive, and it only gains a visit when a sync actually runs.
+
+The practical consequence: **sync at least once every 90 days, or that
+profile's history is permanently lost.** Launching the dashboard is enough,
+since `run.sh` syncs first. If you go three months without opening it, the
+gap is not recoverable by any means.
+
+To see where you stand per source:
+
+```bash
+python -c "
+import json, collections
+rows = [json.loads(l) for l in open('data/visits.jsonl')]
+by = collections.defaultdict(list)
+for r in rows: by[(r['source'], r['account'])].append(r['timestamp'])
+for k in sorted(by, key=str):
+    v = sorted(by[k]); print(f'{str(k):50s} {len(v):5d}  {v[0][:10]} -> {v[-1][:10]}')
+"
+```
+
+Each visit records which mechanism and account it came from, in a
+`visit_sources` table rather than columns on `visits`, because the same
+physical visit can legitimately arrive from both the local Chrome read and a
+Takeout export. `GET /health` reports the per-source breakdown.
+
+## Google Takeout integration
+
+Optional, and off until you enable it. Everything below is additive: with it
+disabled, the local Chrome path works exactly as before.
+
+Local Chrome history has two hard limits. It expires after about 90 days,
+and it only covers one account on one device. Google Takeout exports Chrome
+history at the **account** level, which Chrome Sync has already merged
+across your devices, so it reaches further back and includes a second Google
+account and mobile browsing.
+
+Access is **read-only** and password-free. The single OAuth scope is
+`drive.readonly`; the app never asks for, receives, stores, or transmits a
+Google password, and it never deletes, moves, or modifies anything in your
+Drive. Deciding how long to keep archives is yours to make by hand.
+
+### 1. Create the OAuth client (manual, in Google Cloud Console)
+
+You have to do this part yourself; it cannot be scripted.
+
+1. Go to <https://console.cloud.google.com/> and **create a project** (or
+   pick an existing one).
+2. **APIs and Services > Library**, search for **Google Drive API**, and
+   click **Enable**.
+3. Open **Google Auth Platform** (previously "OAuth consent screen") and
+   configure it:
+   - **Audience: External**. Internal is only available to Workspace
+     organizations.
+   - Fill in the app name and your own email for the support and developer
+     contact fields.
+4. Under **Audience > Test users**, **add every Google account whose history
+   you want to read**. An account that is not listed cannot authorize the
+   app.
+5. Under **Data access**, **Add or remove scopes**, and add
+   `https://www.googleapis.com/auth/drive.readonly`. Nothing else.
+6. **Clients > Create client**, application type **Desktop app**. Download
+   the client secret JSON and save it in the project root. The filename
+   matches `client_secret*.json`, which is git-ignored.
+
+**Publishing status.** While the app stays in "Testing", Google expires
+refresh tokens after roughly **7 days**. The sync handles this gracefully:
+it reports `re-authorization needed for account X` and carries on with
+whatever other sources it can reach, rather than crashing or silently
+skipping. When it happens, run:
+
+```bash
+python scripts/setup_takeout.py --authorize you@example.com
+```
+
+### 2. Schedule Takeout to deliver to Drive
+
+1. Go to <https://takeout.google.com/>.
+2. **Deselect all**, then select **Chrome** only. Use *All Chrome data
+   included* to narrow it to **History** so the archives stay small.
+3. Choose **Export every 2 months for 1 year** to get a rolling series
+   instead of a single snapshot.
+4. Set **Delivery: Add to Drive**, and **File type: .zip**.
+
+Delivering to Drive rather than email matters: **emailed Takeout links
+expire after 7 days**, while files in Drive persist until you remove them.
+`.tgz` archives are listed but skipped, because the extractor reads `.zip`.
+
+### 3. Run setup
+
+```bash
+python scripts/setup_takeout.py
+```
+
+It asks whether to enable the integration, runs the browser OAuth flow, and
+offers to authorize additional accounts (one token file per account under
+`tokens/`, git-ignored, owner-only permissions). It then asks whether to
+sync on launch and writes everything to `config.local.toml`, also
+git-ignored.
+
+Re-run it any time to add another account or change a preference: it loads
+the existing config, changes only what you answer, and writes it back.
+
+If you enable the integration but the OAuth flow does not complete, setup
+says so loudly rather than leaving you with a config that looks ready and
+warns on every sync. `--status` repeats that warning.
+
+The Drive folder prompt accepts a folder **name** (`Takeout`) as well as an
+ID; the name is resolved against Drive at sync time. Leave it blank to
+search everywhere, which is usually right.
+
+```bash
+python scripts/setup_takeout.py --status              # show current config
+python scripts/setup_takeout.py --authorize EMAIL     # re-authorize one account
+python scripts/setup_takeout.py --disable             # turn it off, keep data
+```
+
+### Check-on-launch syncing
+
+`./run.sh` runs one sync pass before starting the server: it checks Drive
+for archives it has not processed, ingests any it finds, re-reads local
+Chrome, appends everything to the log, and updates the database.
+
+It is a single pass, not a daemon or a scheduler, and it runs as its own
+process so a failure cannot take the dashboard down. If Drive is
+unreachable, a token has expired, or an archive is malformed, it logs a
+warning, records the problem in `data/sync_state.json` where `GET /health`
+exposes it, and **serves the dashboard with existing data anyway**.
+
+Takeout only produces a new archive every ~2 months, so the pass early-exits
+if one ran within `min_sync_interval_hours` (default 24).
+
+```bash
+./run.sh --no-sync       # launch without syncing
+./run.sh --force-sync    # sync even if one ran recently
+
+python -m app.sync --force      # sync now
+python -m app.sync --no-drive   # local Chrome only
+python -m app.sync --rebuild    # re-ingest the whole log into the database
+
+# One-off migration: fold history captured before the log existed into it
+python -m app.sync --import wikipedia_history.json --force
+python -m app.sync --backfill-from-db --force   # recover DB-only visits
+python -m app.sync --rebuild --force            # backfill provenance
+python -m app.sync --compact-log                # drop superseded duplicates
+```
+
+Those three matter more than they look, and are worth running once on an
+install that predates the log.
+
+`--import` reads an extractor JSON written months ago, which usually reaches
+further back than local Chrome still does. `--backfill-from-db` catches
+visits whose source file is gone entirely, so the database is their only
+copy; their URLs are reconstructed from canonical titles and tagged with the
+`legacy_db` source, since a reconstruction is not a real capture.
+
+`--compact-log` drops records superseded by a more specific duplicate of
+themselves, which happens when a record gains a field it did not have when
+first logged (a local visit logged before the account was known, then again
+with it). It rewrites the log and the matching provenance rows; the visit
+counts are unaffected either way, since dedup already collapses these.
+
+Afterwards the log is the complete record and `data/app.db` is genuinely
+disposable: delete it, run `python -m app.sync --rebuild`, and you get the
+same pages and visits back. One caveat before you delete it: `app.db` also
+holds the topic, embedding, pageview, and UMAP caches, and rebuilding those
+costs real time and network. `--rebuild` alone does not touch them.
+
+The first Takeout ingest can take a while: every article title it has not
+seen before needs a redirect lookup against the MediaWiki API. Later syncs
+hit the persistent redirect cache and are fast.
+
+### Deduplication
+
+The same visit can arrive from both the local Chrome read and a Takeout
+export. Duplicates would inflate every statistic, so records are collapsed
+on the **canonical post-redirect title** (so `/wiki/Foo`, `/wiki/foo?action=raw`,
+the mobile host, and a redirect and its target are one page) plus a
+timestamp tolerance.
+
+That tolerance is one constant, `DEDUP_TOLERANCE_S` in `app/dedup.py`, and
+it ships at `0`, meaning an exact same-second match. Measured against a real
+Takeout archive on 2026-08-09, visits present in both sources agreed to the
+second, delta 0.
+
+**That measurement had n=1**, and it will stay small, which is also why it
+matters less than it looks. Takeout covers the personal account; the busy
+local profile belongs to a Workspace account whose administrator has Takeout
+disabled, so it can never be a second Takeout source. The two inputs cover
+almost disjoint accounts, so cross-source duplicates are rare by
+construction.
+
+Where dedup actually does load-bearing work, both sides come from the *same*
+mechanism and timestamps are byte-identical, so exact matching is provably
+right: consecutive Takeout archives re-export months of the same visits, and
+every sync re-reads the whole local Chrome profile.
+
+If you ever add a second Takeout account, re-check with:
+
+```bash
+python scripts/compare_sources.py --takeout takeout-20260809T120000Z-001.zip --by-title
+```
+
+It reports exact `(url, timestamp)` matches, URL matches within
+1s/60s/same-day, and the full delta distribution, then recommends a
+tolerance. It needs the two sources to cover an **overlapping period**.
+
+### A timestamp trap, for anyone extending the extractor
+
+The three inputs do not share an epoch:
+
+| Source | Field | Epoch |
+|---|---|---|
+| Chrome SQLite | `visits.visit_time` | microseconds since **1601** |
+| Google Takeout | `time_usec` (a string) | microseconds since **1970** |
+| History extensions | `visitTime` / `lastVisitTime` | milliseconds since 1970 |
+
+Takeout's `time_usec` being the Unix epoch contradicts this repo's own older
+notes and the reference scripts, which all called it a 1601 value. Reading a
+real archive that way subtracts 11644473600 seconds, lands in 1663 BC, fails
+the plausibility bounds, and drops every row: it turned 2804 real Wikipedia
+visits into zero with no error message. `usec_to_unix` now decodes both
+readings and keeps whichever is a plausible date, and the sync warns loudly
+whenever any row is dropped for a bad timestamp.
+
+## Launching
+
 `run.sh` is the whole launch procedure in one command: it locates the conda
-environment by path (so no `conda activate` is needed first), starts
-uvicorn, waits for the API to answer, opens the dashboard in a browser, and
-leaves the server in the foreground so Ctrl-C stops it. Re-running it while
-a server is already up on that port reuses it instead of failing to bind.
+environment by path (so no `conda activate` is needed first), runs the
+check-on-launch sync, starts uvicorn, waits for the API to answer, opens the
+dashboard in a browser, and leaves the server in the foreground so Ctrl-C
+stops it. Re-running it while a server is already up on that port reuses it
+instead of failing to bind.
 
 ```bash
 ./run.sh --port 8080     # serve somewhere else
 ./run.sh --no-browser    # server only
+./run.sh --no-sync       # skip the sync pass
+./run.sh --force-sync    # sync even if one ran recently
 ```
 
 To launch from anywhere, add an alias to `~/.zshrc`:
@@ -63,6 +360,9 @@ curl -X POST localhost:8000/ingest --json @wikipedia_history.json
 curl -X POST "localhost:8000/enrich?include_pageviews=true"
 curl localhost:8000/stats/summary
 ```
+
+`GET /health` also reports the per-source visit breakdown and the last sync's
+outcome, including any account that needs re-authorization.
 
 Endpoints: `/health`, `POST /ingest`, `POST /enrich`, `/stats/summary`,
 `/stats/top?n=`, `/stats/heatmap?tz=`, `/stats/daily?tz=`,
@@ -177,13 +477,25 @@ vertical bars did not.
 ## Layout
 
 ```
-run.sh                       # one-command launcher (server + browser)
+run.sh                       # one-command launcher (sync + server + browser)
 config.py                    # paths, API user-agent, timezone, request policy
-extract/extract_history.py   # standalone: browser history -> standardized JSON
-app/                         # ingest, normalize, storage, stats, topics,
-                             # embeddings, umap_space, pageviews, api
-scripts/                     # build_reference_space.py, check_env.py
-data/                        # local DB + reference artifacts (git-ignored)
+config.local.toml            # your preferences + accounts (git-ignored)
+extract/extract_history.py   # standalone: Takeout zip / Chrome DB / JSON
+                             #   -> standardized JSON. The only browser-aware code.
+app/
+  visitlog.py                # append-only JSONL log: the source of truth
+  sync.py                    # check-on-launch pass over every input source
+  drive.py                   # read-only Google Drive client (lazy imports)
+  dedup.py                   # collapse one visit seen by two sources
+  localconfig.py             # config.local.toml read/write
+  ingest, normalize, storage, stats, topics,
+  embeddings, umap_space, pageviews, api
+scripts/
+  setup_takeout.py           # interactive, re-runnable OAuth + preferences
+  compare_sources.py         # measure timestamp drift to set the dedup tolerance
+  build_reference_space.py, check_env.py
+data/                        # visits.jsonl, app.db, reference artifacts (git-ignored)
+tokens/                      # one OAuth token per account (git-ignored)
 tests/                       # pytest suite
 reference_code/              # prior exploratory scripts (read-only reference)
 ```

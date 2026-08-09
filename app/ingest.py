@@ -23,7 +23,7 @@ import sqlite3
 from pathlib import Path
 
 import config
-from app import normalize, storage
+from app import dedup, normalize, storage
 
 log = logging.getLogger(__name__)
 
@@ -34,17 +34,33 @@ def ingest_file(
     path: str | Path,
     conn: sqlite3.Connection,
     session=None,
+    default_source: str | None = None,
+    default_account: str | None = None,
 ) -> dict:
     document = json.loads(Path(path).read_text(encoding="utf-8"))
-    return ingest_document(document, conn, session=session)
+    return ingest_document(
+        document,
+        conn,
+        session=session,
+        default_source=default_source,
+        default_account=default_account,
+    )
 
 
 def ingest_document(
     document: dict,
     conn: sqlite3.Connection,
     session=None,
+    default_source: str | None = None,
+    default_account: str | None = None,
 ) -> dict:
-    """Ingest one standardized export; returns a report of what happened."""
+    """Ingest one standardized export; returns a report of what happened.
+
+    Visits may carry per-row "source" and "account" fields (the append-only
+    log emits them); default_source/default_account fill in for rows that do
+    not, so a plain schema-1.0 export from the extractor still ingests
+    unchanged and simply records no provenance.
+    """
     version = document.get("schema_version") if isinstance(document, dict) else None
     if version != config.SCHEMA_VERSION:
         raise ValueError(
@@ -54,7 +70,12 @@ def ingest_document(
 
     rows = document.get("visits", [])
     valid = [
-        (row["url"], row["timestamp"])
+        (
+            row["url"],
+            row["timestamp"],
+            row.get("source") or default_source,
+            row.get("account") or default_account,
+        )
         for row in rows
         if isinstance(row, dict) and row.get("url") and row.get("timestamp")
     ]
@@ -63,39 +84,65 @@ def ingest_document(
     # Resolve URL -> canonical title, network only for cache misses (D6).
     cache = storage.get_redirect_cache(conn)
     known_before = set(cache)
-    urls = [url for url, _ in valid]
+    urls = [url for url, _, _, _ in valid]
     mapping = normalize.canonicalize(urls, cache, session=session)
     newly_resolved = {title: cache[title] for title in set(cache) - known_before}
     if newly_resolved:
         storage.update_redirect_cache(conn, newly_resolved)
 
-    # Group visit timestamps by canonical title.
-    groups: dict[str, dict] = {}
+    # Resolved rows become dedup entries keyed on the CANONICAL title, so a
+    # desktop URL, its mobile form, and a redirect source and target are all
+    # one page before any timestamp comparison happens (D5, D11).
+    entries: list[dict] = []
+    raw_titles: dict[str, dict] = {}
     dropped_visits = 0
-    for url, stamp in valid:
+    for url, stamp, source, account in valid:
         canonical = mapping.get(url)
         if canonical is None:
             dropped_visits += 1
             continue
-        group = groups.setdefault(
-            canonical,
-            {"timestamps": [], "raw_title": None, "raw_title_ts": None},
+        entries.append(
+            {
+                "key": canonical,
+                "timestamp": stamp,
+                "source": source,
+                "account": account,
+            }
         )
-        group["timestamps"].append(stamp)
         # raw_title: pre-redirect title from the earliest visit's URL
-        if group["raw_title_ts"] is None or stamp < group["raw_title_ts"]:
-            group["raw_title"] = normalize.url_to_title(url)
-            group["raw_title_ts"] = stamp
+        seen = raw_titles.setdefault(canonical, {"title": None, "stamp": None})
+        if seen["stamp"] is None or stamp < seen["stamp"]:
+            seen["title"] = normalize.url_to_title(url)
+            seen["stamp"] = stamp
+
+    # Collapse records describing the same physical visit, merging their
+    # provenance. With the tolerance at 0 this is an exact same-second match,
+    # which is what both input paths already produce (see app/dedup.py).
+    collapsed = dedup.collapse(entries)
+    groups: dict[str, dict] = {}
+    for visit in collapsed:
+        group = groups.setdefault(
+            visit["key"], {"timestamps": [], "provenance": {}}
+        )
+        group["timestamps"].append(visit["timestamp"])
+        if visit["sources"]:
+            group["provenance"][visit["timestamp"]] = visit["sources"]
 
     pages_before = storage.count_pages(conn)
-    attempted = 0
+    # attempted counts RAW resolved rows, not collapsed visits, so
+    # visits_already_present keeps meaning "input rows that produced no new
+    # visit row" whether the cause was dedup or a prior ingest.
+    attempted = len(entries)
     inserted = 0
+    source_rows = 0
     for canonical, group in groups.items():
         page_id = storage.upsert_page(
-            conn, canonical, group["raw_title"], min(group["timestamps"])
+            conn, canonical, raw_titles[canonical]["title"], min(group["timestamps"])
         )
-        attempted += len(group["timestamps"])
         inserted += storage.insert_visits(conn, page_id, group["timestamps"])
+        source_rows += storage.attach_visit_sources(
+            conn, page_id, group["provenance"]
+        )
     storage.refresh_visit_counts(conn)
     conn.commit()
 
@@ -111,6 +158,10 @@ def ingest_document(
         "visits_dropped_non_article": dropped_visits,
         "visits_inserted": inserted,
         "visits_already_present": attempted - inserted,
+        # Rows this ingest merged into an existing collapsed visit, i.e. the
+        # cross-source dedup that actually happened within this document.
+        "visits_deduplicated": attempted - len(collapsed),
+        "visit_source_rows": source_rows,
         "pages_new": storage.count_pages(conn) - pages_before,
         "pages_total": storage.count_pages(conn),
         "visits_total": storage.count_visits(conn),
