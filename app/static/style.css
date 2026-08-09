@@ -9,7 +9,7 @@
      is sized to it so nothing reflows mid-animation); --sidebar-w is what
      the column actually shows, and collapses to 0 when the panels are
      stowed. */
-  --panel-w: 320px;
+  --panel-w: 360px;
   --sidebar-w: var(--panel-w);
   --header-h: 52px;
 }
@@ -158,10 +158,13 @@ body.no-anim #panels { transition: none; }   /* suppress the load-time slide */
 }
 .panel h2 {
   margin: 0 0 2px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink-soft);
 }
+/* One row per macro topic, so this panel needs more height than the two
+   time series to keep the topic labels from crowding each other. */
+#panel-categories { flex: 1.35; }
 .panel svg { flex: 1; width: 100%; min-height: 0; }
 .panel .dimmable { transition: opacity 0.2s; }
 .panel .marker { stroke: var(--ink); stroke-width: 1.2; opacity: 0.8; }
@@ -175,7 +178,7 @@ body.no-anim #panels { transition: none; }   /* suppress the load-time slide */
    against that grid area, so a top of --header-h would land one header
    below the header. Fixed always resolves against the viewport. */
 @media (max-width: 720px) {
-  :root { --panel-w: min(320px, 86vw); }
+  :root { --panel-w: min(360px, 86vw); }
   #panels {
     position: fixed;
     top: var(--header-h);

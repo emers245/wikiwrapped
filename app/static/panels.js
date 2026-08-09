@@ -11,9 +11,16 @@ window.WWpanels = (function () {
   const cat = {};    // {svg, groups}
   const daily = {};  // {svg, x, y, plotHeight, markerLayer}
   const hours = {};  // {svg, x, y, plotHeight, markerLayer}
-  const MARGIN = { top: 6, right: 12, bottom: 30, left: 34 };
+  // Type sizes for the chart interiors. The panel headings are styled in
+  // style.css; these are SVG text, so they live here. Margins below are
+  // sized to fit them: raising a font size means raising its margin too.
+  const AXIS_FONT = 10;
+  const LABEL_FONT = 10.5;
+  const LEGEND_FONT = 9.5;
+
+  const MARGIN = { top: 6, right: 12, bottom: 34, left: 40 };
   // Horizontal bars: the left margin holds topic labels, not an axis.
-  const CAT_MARGIN = { top: 14, right: 10, bottom: 18, left: 86 };
+  const CAT_MARGIN = { top: 16, right: 10, bottom: 22, left: 110 };
 
   function panelSize(id) {
     const rect = document.querySelector(`#${id} svg`).getBoundingClientRect();
@@ -23,7 +30,7 @@ window.WWpanels = (function () {
   function shortLabel(topic) {
     let label = topic.replace(/^Culture\./, "");
     if (label === "History and Society") label = "History/Society";
-    if (label.length > 16) label = label.slice(0, 15) + "...";
+    if (label.length > 17) label = label.slice(0, 16) + "...";
     return label;
   }
 
@@ -57,7 +64,7 @@ window.WWpanels = (function () {
     svg.append("g")
       .attr("transform", `translate(0,${h - CAT_MARGIN.bottom})`)
       .call(d3.axisBottom(x).ticks(3, "~%").tickSizeOuter(0))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
     const half = y.bandwidth() / 2;
     cat.groups = svg.append("g").selectAll("g")
@@ -82,7 +89,7 @@ window.WWpanels = (function () {
       .attr("y", t => y(t) + y.bandwidth() / 2)
       .attr("dy", "0.32em")
       .attr("text-anchor", "end")
-      .attr("font-size", 8.5)
+      .attr("font-size", LABEL_FONT)
       .attr("fill", "#6b6a64")
       .text(shortLabel)
       .append("title")            // full name when the label is truncated
@@ -90,13 +97,13 @@ window.WWpanels = (function () {
 
     const legend = svg.append("g")
       .attr("transform", `translate(${CAT_MARGIN.left}, 1)`)
-      .attr("font-size", 8).attr("fill", "#8a8880");
-    legend.append("rect").attr("width", 8).attr("height", 8)
+      .attr("font-size", LEGEND_FONT).attr("fill", "#8a8880");
+    legend.append("rect").attr("width", 9).attr("height", 9)
       .attr("fill", "#8a8880");
-    legend.append("text").attr("x", 11).attr("y", 7).text("you");
-    legend.append("rect").attr("x", 38).attr("width", 8).attr("height", 8)
+    legend.append("text").attr("x", 13).attr("y", 8).text("you");
+    legend.append("rect").attr("x", 44).attr("width", 9).attr("height", 9)
       .attr("fill", WW.hexToRgba("#8a8880", 0.45));
-    legend.append("text").attr("x", 49).attr("y", 7).text("popular");
+    legend.append("text").attr("x", 57).attr("y", 8).text("popular");
   }
 
   /* -- visits per day ------------------------------------------------------ */
@@ -125,11 +132,11 @@ window.WWpanels = (function () {
     svg.append("g")
       .attr("transform", `translate(0,${h - MARGIN.bottom})`)
       .call(d3.axisBottom(x).ticks(3).tickSizeOuter(0))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
     svg.append("g")
       .attr("transform", `translate(${MARGIN.left},0)`)
       .call(d3.axisLeft(y).ticks(3))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
     const content = svg.append("g").attr("class", "dimmable");
     daily.content = content;
@@ -174,11 +181,11 @@ window.WWpanels = (function () {
       .attr("transform", `translate(0,${h - MARGIN.bottom})`)
       .call(d3.axisBottom(x).tickValues([0, 6, 12, 18, 24])
         .tickFormat(v => `${v}:00`).tickSizeOuter(0))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
     svg.append("g")
       .attr("transform", `translate(${MARGIN.left},0)`)
       .call(d3.axisLeft(y).ticks(3))
-      .attr("font-size", 8).attr("color", "#8a8880");
+      .attr("font-size", AXIS_FONT).attr("color", "#8a8880");
 
     const barWidth = (x(1) - x(0)) * 0.8;
     hours.content = svg.append("g").attr("class", "dimmable");
