@@ -14,6 +14,7 @@ reference build) resume nearly where they stopped.
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import time
 from urllib.parse import quote
@@ -31,13 +32,59 @@ CHUNK_SIZE = 64
 _model = None
 
 
+# Hugging Face's own switches for "never touch the network". Read by
+# huggingface_hub and transformers when they are first imported, which is
+# why they are set before the import below.
+OFFLINE_ENV = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
+
+
+class ModelMissing(RuntimeError):
+    """The installed app's bundled model is not where it should be."""
+
+
 def get_model():
-    """Lazy singleton; loading sentence-transformers is expensive."""
+    """Lazy singleton; loading sentence-transformers is expensive.
+
+    Where the model comes from, in order:
+
+    1. The bundled copy in config.EMBEDDING_MODEL_DIR (an installed app, or
+       a checkout after scripts/fetch_model.py). Loading a local folder
+       never contacts Hugging Face.
+    2. Installed app without that copy: ModelMissing. An install is never
+       allowed to quietly download a replacement, so the offline switches
+       are set first, and a broken install says so instead.
+    3. Dev checkout without it: download the pinned revision from Hugging
+       Face (cached by huggingface_hub), as before bundling existed.
+
+    Both routes use config.EMBEDDING_MODEL_REVISION, the exact weights the
+    reference space was built with.
+    """
     global _model
     if _model is None:
+        local = config.EMBEDDING_MODEL_DIR
+        installed = config.is_installed()
+        if installed:
+            for name, value in OFFLINE_ENV.items():
+                os.environ.setdefault(name, value)
+        if not (local / "modules.json").is_file() and installed:
+            raise ModelMissing(
+                f"The bundled language model is missing from {local}. "
+                "Reinstall Wikipedia Wrapped to restore it."
+            )
         from sentence_transformers import SentenceTransformer
 
-        _model = SentenceTransformer(config.EMBEDDING_MODEL, device="cpu")
+        if (local / "modules.json").is_file():
+            _model = SentenceTransformer(str(local), device="cpu")
+        else:
+            log.info(
+                "No bundled model at %s; downloading %s@%s (dev fallback; "
+                "scripts/fetch_model.py bundles it).",
+                local, config.EMBEDDING_MODEL, config.EMBEDDING_MODEL_REVISION[:12],
+            )
+            _model = SentenceTransformer(
+                config.EMBEDDING_MODEL, device="cpu",
+                revision=config.EMBEDDING_MODEL_REVISION,
+            )
     return _model
 
 

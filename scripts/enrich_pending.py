@@ -96,8 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         if unembedded:
             progress.emit(
                 "model",
-                "Loading the language model (the first run downloads about "
-                "90 MB and can take a minute)",
+                "Loading the language model (this can take a minute the "
+                "first time)",
             )
             model = embeddings.get_model()
         report = embeddings.embed_pages(

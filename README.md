@@ -83,8 +83,12 @@ against the new location, deleting the repo copies is up to you.
 # 1. Capture your Wikipedia visits into the append-only log and the database
 python -m app.sync --force
 
-# 2. One-time: build the frozen UMAP reference space (hours at full scale;
-#    resumable; use --head/--tail for small test builds)
+# 2. One-time: put the pinned model and a reference space in data/. Either
+#    fetch the packaged reference space (needs a GitHub token; the repo is
+#    private) or build one (hours at full scale; resumable; --head/--tail
+#    for small test builds). See packaging/README.md.
+python scripts/fetch_model.py
+python scripts/fetch_reference_space.py --dest data    # or:
 python scripts/build_reference_space.py
 
 # 3. Open the app window (syncs and enriches in the background; see

@@ -16,10 +16,15 @@ Wing):
    embeddings + labeled reference coords + build metadata.
 
 At full scale (30k + 10k, the defaults) steps 4-5 are API-bound and take
-HOURS; run overnight. Small builds for pipeline testing:
+HOURS; run overnight. Run scripts/fetch_model.py first, so the embeddings
+come from the bundled model at the pinned revision (the build records
+whether it did). Small builds for pipeline testing:
 
     python scripts/build_reference_space.py --head 1500 --tail 500 \
         --db /tmp/test.db --out /tmp/reference
+
+The build's caches go in their own database (data/reference-build.db by
+default), never the app's.
 
 The default dump is the hour-file already in reference_code/; pass --dump
 to use a fresher one from dumps.wikimedia.org/other/pageviews/.
@@ -43,9 +48,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 
 import config
-from app import embeddings, normalize, storage, topics, umap_space, wiki_http
+from app import bundle, embeddings, normalize, storage, topics, umap_space, wiki_http
 
 DEFAULT_DUMP = config.PROJECT_ROOT / "reference_code" / "pageviews-202505.gz"
+
+# The build's own cache database (topics, embeddings, redirects for ~40k
+# articles), kept apart from the app's database in the user-data dir so a
+# build never bloats the user's own history database. Under the repo's
+# data/, which is git-ignored and where this developer tool may write.
+DEFAULT_BUILD_DB = config.PROJECT_ROOT / "data" / "reference-build.db"
 
 
 def parse_dump(path: Path, n: int) -> list[str]:
@@ -141,8 +152,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="random titles to include (default %(default)s)")
     parser.add_argument("--dump", type=Path, default=DEFAULT_DUMP,
                         help="pageviews hour-file .gz (default %(default)s)")
-    parser.add_argument("--db", type=Path, default=config.DB_PATH,
-                        help="database for the shared caches (default %(default)s)")
+    parser.add_argument("--db", type=Path, default=DEFAULT_BUILD_DB,
+                        help="cache database for the build (default %(default)s; "
+                             "resumable: re-running reuses its caches)")
     parser.add_argument("--out", type=Path, default=config.DEV_REFERENCE_DIR,
                         help="artifact output dir (default %(default)s)")
     args = parser.parse_args(argv)
@@ -217,6 +229,12 @@ def main(argv: list[str] | None = None) -> int:
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "embedding_model": config.EMBEDDING_MODEL,
+        # The exact weights the embeddings came from, and every library
+        # version the pickled reducer depends on. Packaging refuses to ship
+        # this space with a runtime whose versions differ (app/bundle.py).
+        "embedding_model_revision": config.EMBEDDING_MODEL_REVISION,
+        "embedding_model_bundled": (config.EMBEDDING_MODEL_DIR / "modules.json").is_file(),
+        "versions": bundle.runtime_versions(),
         "umap_params": umap_space.UMAP_PARAMS,
         "umap_version": umap.__version__,
         "sentence_transformers_version": sentence_transformers.__version__,
