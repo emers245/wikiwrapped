@@ -593,3 +593,80 @@ def test_archive_processed_once_then_skipped(scratch):
         assert storage.processed_archives(conn)[0]["visits_extracted"] == 42
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Drive listing: only real archives count
+# ---------------------------------------------------------------------------
+
+class _FakeDriveFiles:
+    """Just enough of service.files().list(...).execute() for one page."""
+
+    def __init__(self, files):
+        self.files_ = files
+        self.queries = []
+
+    def files(self):
+        return self
+
+    def list(self, q, **kwargs):
+        self.queries.append(q)
+        # Honor the folder exclusion the way Drive would.
+        shown = [f for f in self.files_
+                 if not ("mimeType != 'application/vnd.google-apps.folder'" in q
+                         and f["mimeType"] == drive.FOLDER_MIME_TYPE)]
+        return _FakeExecute({"files": shown})
+
+
+class _FakeExecute:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def execute(self):
+        return self.payload
+
+
+def test_the_takeout_folder_is_not_reported_as_a_skipped_archive(monkeypatch, caplog):
+    """Takeout delivers into a Drive folder named "Takeout", which a name
+    search also matches; it used to be reported as a skipped non-zip file
+    with advice to change the export format."""
+    if not drive.libraries_available():
+        pytest.skip("google libraries not installed")
+    fake = _FakeDriveFiles([
+        {"id": "f", "name": "Takeout", "mimeType": drive.FOLDER_MIME_TYPE},
+        {"id": "a", "name": "takeout-20261009T034829Z-001.zip", "mimeType": "application/x-zip"},
+        {"id": "b", "name": "takeout-20261009T034829Z-1-001.zip", "mimeType": "application/x-zip"},
+        {"id": "c", "name": "takeout-20261009T034829Z-002.tgz", "mimeType": "application/x-gzip"},
+    ])
+    monkeypatch.setattr(drive, "_service", lambda creds: fake)
+
+    with caplog.at_level("INFO", logger="app.drive"):
+        archives = drive.list_takeout_archives(creds=None)
+
+    assert [a["id"] for a in archives] == ["a", "b"]
+    assert "mimeType != 'application/vnd.google-apps.folder'" in fake.queries[0]
+    skipped = [r.getMessage() for r in caplog.records if "non-zip" in r.getMessage()]
+    assert skipped == ["Skipped 1 non-zip Takeout file(s); set the export format "
+                       "to .zip in Takeout for these to be ingested."]
+
+
+def test_a_folder_returned_anyway_is_still_not_an_archive(monkeypatch, caplog):
+    """Belt and braces: even if Drive ignored the query clause, a folder
+    must neither be listed nor counted as a skipped file."""
+    if not drive.libraries_available():
+        pytest.skip("google libraries not installed")
+
+    class IgnoresClause(_FakeDriveFiles):
+        def list(self, q, **kwargs):
+            self.queries.append(q)
+            return _FakeExecute({"files": self.files_})
+
+    fake = IgnoresClause([
+        {"id": "f", "name": "Takeout", "mimeType": drive.FOLDER_MIME_TYPE},
+        {"id": "a", "name": "takeout-1.zip", "mimeType": "application/x-zip"},
+    ])
+    monkeypatch.setattr(drive, "_service", lambda creds: fake)
+    with caplog.at_level("INFO", logger="app.drive"):
+        archives = drive.list_takeout_archives(creds=None)
+    assert [a["id"] for a in archives] == ["a"]
+    assert not any("non-zip" in r.getMessage() for r in caplog.records)

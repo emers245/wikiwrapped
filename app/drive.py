@@ -40,6 +40,8 @@ log = logging.getLogger(__name__)
 # many archives should still enumerate correctly.
 PAGE_SIZE = 100
 
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+
 INSTALL_HINT = (
     "Google Drive support needs three extra packages:\n"
     "    conda env update -f environment.yml\n"
@@ -264,7 +266,7 @@ def resolve_folder_id(creds, value: str | None) -> str | None:
         found = service.files().get(
             fileId=value, fields="id, mimeType"
         ).execute()
-        if found.get("mimeType") == "application/vnd.google-apps.folder":
+        if found.get("mimeType") == FOLDER_MIME_TYPE:
             return found["id"]
         log.warning("Drive item %s is not a folder; ignoring the setting.", value)
         return None
@@ -278,7 +280,7 @@ def resolve_folder_id(creds, value: str | None) -> str | None:
         response = (
             service.files()
             .list(
-                q="mimeType = 'application/vnd.google-apps.folder' "
+                q=f"mimeType = '{FOLDER_MIME_TYPE}' "
                   f"and name = '{escaped}' and trashed = false",
                 spaces="drive",
                 fields="files(id, name)",
@@ -320,6 +322,11 @@ def list_takeout_archives(creds, folder_id: str | None = None) -> list[dict]:
     clauses = [
         "trashed = false",
         f"name contains '{config.TAKEOUT_NAME_PATTERN}'",
+        # Takeout delivers into a Drive FOLDER named "Takeout", which the
+        # name match above also finds. Without this clause it was counted as
+        # a skipped non-zip archive, and the sync told the user to change
+        # their export format for no reason.
+        f"mimeType != '{FOLDER_MIME_TYPE}'",
     ]
     if folder_id:
         clauses.append(f"'{folder_id}' in parents")
@@ -351,6 +358,10 @@ def list_takeout_archives(creds, folder_id: str | None = None) -> list[dict]:
         raise DriveError(f"Could not list Drive files: {exc}") from exc
 
     # Takeout can deliver .tgz too; only .zip is supported by the extractor.
+    # Folders are excluded by the query; this second check keeps a folder
+    # out even if Drive ever returns one, so the message below only ever
+    # counts real archives.
+    found = [f for f in found if f.get("mimeType") != FOLDER_MIME_TYPE]
     archives = [f for f in found if f.get("name", "").lower().endswith(".zip")]
     skipped = len(found) - len(archives)
     if skipped:
