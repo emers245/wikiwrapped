@@ -38,8 +38,8 @@ These were decided deliberately. Do not deviate without flagging.
 | D6 | **Caching is first-class.** Embeddings, topic labels, and pageview counts are cached in the database keyed by title (+ date range where relevant). Re-running on an updated history only fetches what's new. |
 | D7 | **Pageview popularity is matched to the user's date range.** "How popular was this page with other readers" is measured over the same date range covered by the user's history, not all-time. |
 | D8 | **Python core, conda environment.** Core in Python. Dependencies in a pinned `environment.yml`. Building the env is step zero and must be verified before anything else (see §9). |
-| D9 | **The append-only log is the source of truth.** `data/visits.jsonl` holds one JSON record per raw visit (`url`, `title`, `timestamp`, `source`, `account`), is only ever appended to, and is deduped on read. `data/app.db` is a **derived, rebuildable** artifact. This exists because Chrome expires local history after ~90 days: whatever reached the log before the window rolled is the only surviving copy, so the log is the thing worth backing up. Every input source writes here first, and the DB is updated from it second. |
-| D10 | **Google Takeout is an input source alongside local Chrome, never a replacement.** Takeout exports at the *account* level (Chrome Sync has already merged every device), so it reaches past the 90-day limit and covers a second account and mobile. Drive access is **read-only** (`drive.readonly`) and the app never handles a Google password: an OAuth token is the only credential it holds. One token file per account under `tokens/`. Provenance lives in the `visit_sources` join table, not columns on `visits`, because one physical visit can legitimately arrive from both routes. The local-Chrome path must keep working with this disabled. |
+| D9 | **The append-only log is the source of truth.** `data/visits.jsonl` holds one JSON record per raw visit (`url`, `title`, `timestamp`, `source`, `account`), is only ever appended to, and is deduped on read. `data/app.db` is a **derived, rebuildable** artifact. This exists because Chrome expires local history after ~90 days: whatever reached the log before the window rolled is the only surviving copy, so the log is the thing worth backing up. Every input source writes here first, and the DB is updated from it second. **Amended 2026-10-24:** the log, the DB, sync state, settings and tokens live in the per-user data directory (`config.USER_DATA_DIR`), not the repo; the program folder is read-only at runtime. Paths below that say `data/` mean `<user data>/data/`. Repo-local copies are migrated only by the explicit, copy-only `python -m app.migrate`. |
+| D10 | **Google Takeout is an input source alongside local Chrome, never a replacement.** Takeout exports at the *account* level (Chrome Sync has already merged every device), so it reaches past the 90-day limit and covers a second account and mobile. Drive access is **read-only** (`drive.readonly`) and the app never handles a Google password: an OAuth token is the only credential it holds. One token file per account under `tokens/` (in the user-data dir since 2026-10-24). Provenance lives in the `visit_sources` join table, not columns on `visits`, because one physical visit can legitimately arrive from both routes. The local-Chrome path must keep working with this disabled. |
 | D11 | **Cross-source dedup is measured, not assumed.** The same visit can arrive from both routes, and quiet duplicates would inflate every statistic. Dedup keys on the **canonical post-redirect title** (D5) plus a timestamp tolerance held in one constant, `app/dedup.py:DEDUP_TOLERANCE_S`. It ships at `0` (exact-second match). Raise it only on evidence from `scripts/compare_sources.py` run against a real Takeout archive; every second of slack risks merging genuine rapid revisits. |
 | D12 | **Check-on-launch sync, not a daemon.** `run.sh` runs `python -m app.sync --on-launch` as a separate process before uvicorn. No scheduler, no background process, and no import-time side effects in `app.api`. The sync **must never block or break startup**: every expected failure is caught, written to `data/sync_state.json`, surfaced on `GET /health`, and the dashboard serves existing data regardless. |
 
@@ -155,7 +155,7 @@ Minimum tables:
 - **`embedding_cache`** — `(canonical_title, vector, model_name, fetched_at)`. (D6)
 - **`umap_coords`** — `(canonical_title, x, y)` for visited pages projected into the frozen space (D4).
 
-Reference-space artifacts (fitted UMAP model, reference embeddings, reference coords) live as files under `data/reference/`, not in the DB.
+Reference-space artifacts (fitted UMAP model, reference embeddings, reference coords) live as files under `data/reference/`, not in the DB. Since 2026-10-24 they are a read-only app resource resolved by `config.resource_dir()` (env override, then the installed app, then the repo's `data/reference/`).
 
 ---
 
@@ -209,13 +209,13 @@ Functions return **data structures, not matplotlib figures** (plotting happens i
 ```
 POST https://api.wikimedia.org/service/lw/inference/v1/models/outlink-topic-model:predict
 Content-Type: application/json
-Api-User-Agent: WikipediaWrapped/0.1 (contact-email)
+Api-User-Agent: WikipediaWrapped/0.1 (https://github.com/emers245/wikipedia-wrapped)
 
 {"page_title": "Douglas_Adams", "lang": "en"}
 ```
 - Title-based; **no revision-ID lookup needed** — delete the old `titles_to_revids` step.
 - It is an *outlink*-based model, so labels differ slightly from the old text-based `articletopic`; the topic taxonomy (WikiProject scheme) is the same, so `macro()` still applies.
-- **Set a real `Api-User-Agent` header with a contact email** — Wikimedia enforces this.
+- **Set a real `Api-User-Agent` header with contact information** — Wikimedia enforces this. **Amended 2026-10-24:** the header identifies the project, `WikipediaWrapped/<version> (https://github.com/emers245/wikipedia-wrapped)`, which Wikimedia's policy accepts (a URL or an email); no user has to supply a personal address. An optional `WIKIPEDIA_WRAPPED_EMAIL` is appended when set.
 - Anonymous rate limit ≈ 50,000 requests/hour per IP (no auth token needed for personal use). Batch politely; back off on HTTP 429.
 
 **Pageviews REST API** (per-article, cheaper than raw dumps for this use):

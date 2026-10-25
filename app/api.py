@@ -31,8 +31,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
-from app import (embeddings, ingest, network, pageviews, stats, storage, sync,
-                 topics, umap_space)
+from app import (embeddings, ingest, migrate, network, pageviews, stats,
+                 storage, sync, topics, umap_space)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -41,7 +41,7 @@ def create_app(
     db_path: str | Path | None = None,
     reference_dir: str | Path | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Wikipedia Wrapped", version="0.1")
+    app = FastAPI(title="Wikipedia Wrapped", version=config.APP_VERSION)
     db_path = db_path or config.DB_PATH
     reference_dir = reference_dir or config.REFERENCE_DIR
 
@@ -159,6 +159,9 @@ def create_app(
                 "errors": state.get("errors", []),
                 "reauthorize": state.get("reauthorize", []),
             },
+            # Non-null while visit history from before the move to the
+            # per-user data dir is still sitting, uncopied, in the repo.
+            "legacy_data": migrate.legacy_status(),
         }
 
     @app.post("/ingest")

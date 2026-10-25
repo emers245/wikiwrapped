@@ -13,7 +13,8 @@ account or flip a preference never wipes existing settings, tokens, or data.
 What it never does: ask for a Google password. Authorization happens in your
 browser against Google, and the only thing that comes back is a read-only
 OAuth token (drive.readonly), cached under tokens/ with owner-only
-permissions. Both that directory and config.local.toml are git-ignored.
+permissions. That directory and config.local.toml both live in the
+per-user data directory (config.USER_DATA_DIR), not in the repo.
 
 The Google Cloud Console steps you have to do by hand first are in the
 README under "Google Takeout integration".
@@ -142,9 +143,9 @@ def interactive(settings: dict) -> dict:
         print(
             "\nNo OAuth client secret found.\n"
             f"Download the Desktop app client JSON from Google Cloud Console\n"
-            f"into {config.PROJECT_ROOT}\n"
-            f"(the filename matches {config.CLIENT_SECRET_GLOB}, which is\n"
-            "git-ignored). The README lists the console steps.\n"
+            f"into {config.USER_DATA_DIR}\n"
+            f"(the filename must match {config.CLIENT_SECRET_GLOB}), or give\n"
+            "its path below. The README lists the console steps.\n"
         )
         path = input("Path to the client secret JSON (blank to skip): ").strip()
         if path:

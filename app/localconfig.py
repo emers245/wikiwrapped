@@ -1,8 +1,9 @@
-"""Git-ignored local preferences: config.local.toml (D10).
+"""Per-user preferences: config.local.toml in the user-data dir (D10).
 
 Separate from config.py on purpose. config.py holds decisions that are the
 same for everyone and belong in git; this holds one user's choices and
-credentials-adjacent settings, and is never committed.
+credentials-adjacent settings, and lives with the rest of the user data
+(config.USER_DATA_DIR), never in the program folder.
 
 TOML because tomllib is stdlib on the pinned Python 3.11 (no new dependency)
 and because comments survive, so the file can document its own options.
@@ -41,8 +42,8 @@ DEFAULTS: dict = {
         "enabled": False,
         "sync_on_launch": False,
         "min_sync_interval_hours": config.MIN_SYNC_INTERVAL_HOURS,
-        # Empty means "discover it": the client secret by glob in the project
-        # root, the archives by name anywhere in Drive.
+        # Empty means "discover it": the client secret by glob in the
+        # user-data dir, the archives by name anywhere in Drive.
         "client_secret": "",
         "drive_folder_id": "",
         "accounts": [],
@@ -152,18 +153,21 @@ def token_path(email: str) -> Path:
 
 
 def client_secret_path(settings: dict) -> Path | None:
-    """Configured client secret, else the first match of the root glob.
+    """Configured client secret, else the first glob match in the user-data dir.
+
+    A relative setting is resolved against the user-data dir too, not the
+    program folder: the secret is a credential, so it is user data.
 
     Returns None when no secret is present, which callers report as "run
     setup first" rather than crashing.
     """
     configured = settings.get("takeout", {}).get("client_secret", "").strip()
     if configured:
-        candidate = Path(configured)
+        candidate = Path(configured).expanduser()
         if not candidate.is_absolute():
-            candidate = Path(config.PROJECT_ROOT) / candidate
+            candidate = Path(config.USER_DATA_DIR) / candidate
         return candidate if candidate.exists() else None
-    matches = sorted(Path(config.PROJECT_ROOT).glob(config.CLIENT_SECRET_GLOB))
+    matches = sorted(Path(config.USER_DATA_DIR).glob(config.CLIENT_SECRET_GLOB))
     return matches[0] if matches else None
 
 

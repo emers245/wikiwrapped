@@ -14,7 +14,7 @@ Boundaries this module holds to:
   is the user's decision, made by hand in Drive.
 - No passwords, ever. The app never asks for, receives, stores, or transmits
   a Google password. The only credential it holds is an OAuth token, cached
-  per account under tokens/ (git-ignored).
+  per account under tokens/ in the user-data dir.
 - No parsing. Archives are handed to extract/extract_history.py, which owns
   every browser-specific format (repo_spec D1). This module is pure I/O.
 
@@ -156,8 +156,8 @@ def authorize_account(settings: dict, email_hint: str | None = None) -> str:
     if secret is None:
         raise DriveError(
             "No OAuth client secret found. Download the Desktop app client "
-            f"JSON from Google Cloud Console into {config.PROJECT_ROOT} "
-            f"(it matches {config.CLIENT_SECRET_GLOB} and is git-ignored), "
+            f"JSON from Google Cloud Console into {config.USER_DATA_DIR} "
+            f"(the filename must match {config.CLIENT_SECRET_GLOB}), "
             "or set takeout.client_secret in config.local.toml. "
             "The README has the console steps."
         )

@@ -16,9 +16,9 @@ up. Chrome expires local history after about 90 days, so a visit that fails
 to reach the log may be gone for good.
 
 THE SYNC MUST NEVER BLOCK OR BREAK STARTUP. Every expected failure - Drive
-unreachable, token expired, archive malformed, no contact email configured -
-is caught, recorded in the returned report and in data/sync_state.json, and
-surfaced by GET /health. run() does not raise for any of them, and the
+unreachable, token expired, archive malformed, Wikipedia unreachable - is
+caught, recorded in the returned report and in sync_state.json (in the
+user-data dir), and surfaced by GET /health. run() does not raise for any of them, and the
 dashboard serves whatever data already exists.
 """
 
@@ -35,7 +35,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import config
-from app import dedup, drive, ingest, localconfig, storage, visitlog
+from app import dedup, drive, ingest, localconfig, migrate, storage, visitlog
 from extract import extract_history
 
 log = logging.getLogger(__name__)
@@ -501,8 +501,8 @@ def _update_database(conn, log_path=None, newly_logged=0, rebuild=False) -> dict
     try:
         result = ingest.ingest_document(document, conn)
     except Exception as exc:
-        # Redirect resolution needs the network and a contact email; neither
-        # is worth failing startup over.
+        # Redirect resolution needs the network, which is not worth failing
+        # startup over.
         return {
             "error": f"Ingest into the database failed ({exc}). Visits are "
                      "safe in the append-only log; retry with "
@@ -558,6 +558,12 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(levelname)s %(message)s",
     )
+
+    # Syncing into the new location while the old log sits unmigrated in the
+    # repo would quietly split the history in two. Say so; never auto-copy.
+    legacy = migrate.legacy_status()
+    if legacy:
+        log.warning(legacy["message"])
 
     if args.import_path:
         try:

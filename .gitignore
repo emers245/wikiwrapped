@@ -6,16 +6,22 @@ client_secret*.json
 tokens/
 *.token.json
 
-# Local preferences (may name Google accounts)
+# Local preferences (may name Google accounts). The app now keeps these in
+# the per-user data dir; these rules still cover the pre-migration copies
+# in a checkout (see app/migrate.py).
 config.local.toml
 
-# Local data: database + reference-space artifacts (kept out of git; see repo_spec S4)
+# Local data: database + reference-space artifacts (kept out of git; see repo_spec S4).
+# User data now lives in the per-user data dir; data/ in a checkout holds the
+# read-only reference space and any not-yet-migrated legacy files.
 data/*
 !data/reference/
 data/reference/*
 !data/reference/.gitkeep
 
-# Personal contact email for Wikimedia API User-Agent (never published)
+# Personal contact email, from when the Wikimedia User-Agent required one.
+# No longer read (the UA names the project URL); kept ignored so a leftover
+# copy can never be committed.
 contact_email.txt
 
 # Browsing history stays local and is never pushed (decision 2026-08-09).

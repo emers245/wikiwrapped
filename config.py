@@ -1,36 +1,129 @@
 """Central configuration: paths, API etiquette, timezone, request policy.
 
 Every module reads settings from here; nothing else hardcodes paths or URLs.
+
+Path constants are resolved once, at import, from environment variables and
+the platform. Resolving them creates nothing: directories are made by the
+code that writes into them, so importing config has no side effects.
 """
 
 import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+APP_NAME = "WikipediaWrapped"
+APP_VERSION = "0.1"
+PROJECT_URL = "https://github.com/emers245/wikipedia-wrapped"
+
 # ---------------------------------------------------------------------------
-# Paths
+# Paths: two kinds of storage, kept strictly apart
 # ---------------------------------------------------------------------------
+# The program folder is read-only at runtime. In an installed app it may sit
+# somewhere the user cannot write (and on macOS, writing into a signed app
+# bundle breaks its signature), so nothing the app creates or changes may
+# live there. Everything is one of:
+#
+# - USER DATA (writable, per user): the database, the visit log, sync state,
+#   settings, OAuth credentials, logs, caches. Lives in the platform's
+#   standard per-user location, or wherever WIKIPEDIA_WRAPPED_DATA_DIR
+#   points (the dev override, for working against a scratch directory).
+#
+# - APP RESOURCES (read-only, shipped with the program): the frozen UMAP
+#   reference space, and later the bundled embedding model.
 PROJECT_ROOT = Path(__file__).resolve().parent
-DATA_DIR = PROJECT_ROOT / "data"
-REFERENCE_DIR = DATA_DIR / "reference"  # frozen UMAP reducer + reference embeddings (D4)
+
+USER_DATA_ENV_VAR = "WIKIPEDIA_WRAPPED_DATA_DIR"
+RESOURCE_ENV_VAR = "WIKIPEDIA_WRAPPED_RESOURCE_DIR"
+
+
+def user_data_dir() -> Path:
+    """Root of this user's writable data.
+
+    The override wins so a developer (or the test suite) can point the whole
+    app at a scratch directory without touching real data. Otherwise the
+    platform default, which platformdirs knows for every OS:
+
+        macOS    ~/Library/Application Support/WikipediaWrapped
+        Windows  %APPDATA%\\WikipediaWrapped   (roaming=True)
+        Linux    $XDG_DATA_HOME/WikipediaWrapped, else ~/.local/share/...
+
+    appauthor=False stops Windows from nesting it under a company folder.
+    """
+    override = os.environ.get(USER_DATA_ENV_VAR, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    import platformdirs
+
+    return Path(platformdirs.user_data_dir(APP_NAME, appauthor=False, roaming=True))
+
+
+def installed_resource_dir() -> Path | None:
+    """Where an installed copy of the app keeps its read-only resources.
+
+    HOOK FOR THE PACKAGING PROMPT. The installer decides where the reference
+    space (and later the model) is unpacked, typically somewhere under the
+    installed environment's prefix. Until that exists this returns None and
+    resolution falls through to the repo checkout.
+    """
+    return None
+
+
+def resource_dir() -> Path:
+    """Root of the read-only app resources, in priority order:
+
+    1. WIKIPEDIA_WRAPPED_RESOURCE_DIR, for testing a resource set by hand.
+    2. installed_resource_dir(), next to an installed app.
+    3. The repo's data/ directory, for a dev checkout.
+    """
+    override = os.environ.get(RESOURCE_ENV_VAR, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    installed = installed_resource_dir()
+    if installed is not None and installed.exists():
+        return installed
+    return PROJECT_ROOT / "data"
+
+
+USER_DATA_DIR = user_data_dir()
+
+# The layout under USER_DATA_DIR deliberately mirrors the old repo layout
+# (data/, tokens/, config.local.toml at the top), so app.migrate copies each
+# legacy file to the same relative path and the mapping is easy to check.
+DATA_DIR = USER_DATA_DIR / "data"
 DB_PATH = DATA_DIR / "app.db"
 
 # Append-only log of raw visits: the durable source of truth (D9). app.db is a
 # rebuildable derived artifact; this file is the thing worth backing up.
-# Under data/, which .gitignore excludes wholesale.
 VISIT_LOG_PATH = DATA_DIR / "visits.jsonl"
 
 # Last-sync bookkeeping for the check-on-launch pass, so a relaunch shortly
 # after a sync can no-op without touching the network.
 SYNC_STATE_PATH = DATA_DIR / "sync_state.json"
 
+LOG_DIR = USER_DATA_DIR / "logs"
+CACHE_DIR = USER_DATA_DIR / "cache"
+
+# Frozen UMAP reducer + reference embeddings (D4): a read-only resource.
+REFERENCE_DIR = resource_dir() / "reference"
+
+# Where scripts/build_reference_space.py writes a fresh reference space. A
+# developer tool, so it is the one thing allowed to write into the repo; the
+# app itself only ever reads REFERENCE_DIR.
+DEV_REFERENCE_DIR = PROJECT_ROOT / "data" / "reference"
+
+# The pre-migration locations, read only by app.migrate (which copies them,
+# never moves them) and by the "not migrated yet" warning.
+LEGACY_DATA_DIR = PROJECT_ROOT / "data"
+LEGACY_CONFIG_PATH = PROJECT_ROOT / "config.local.toml"
+LEGACY_TOKEN_DIR = PROJECT_ROOT / "tokens"
+
 # ---------------------------------------------------------------------------
 # Google Drive / Takeout integration (D10)
 # ---------------------------------------------------------------------------
-# Everything here is credentials or personal preference: all four paths are
-# git-ignored, and none of them is required for the local-Chrome path to work.
-LOCAL_CONFIG_PATH = PROJECT_ROOT / "config.local.toml"
-TOKEN_DIR = PROJECT_ROOT / "tokens"          # one OAuth token per account
+# Everything here is credentials or personal preference, so it is user data,
+# and none of it is required for the local-Chrome path to work.
+LOCAL_CONFIG_PATH = USER_DATA_DIR / "config.local.toml"
+TOKEN_DIR = USER_DATA_DIR / "tokens"         # one OAuth token per account
 CLIENT_SECRET_GLOB = "client_secret*.json"   # downloaded from Cloud Console
 
 # Read-only, and deliberately the narrowest scope that can list and download
@@ -67,31 +160,22 @@ DRIVE_DOWNLOAD_BACKOFF_S = 2.0
 SCHEMA_VERSION = "1.0"
 
 # ---------------------------------------------------------------------------
-# External APIs (repo_spec S8) - Wikimedia requires a real contact address.
-# The email is personal data and is never committed: it is read from the
-# WIKIPEDIA_WRAPPED_EMAIL environment variable, falling back to a git-ignored
-# contact_email.txt at the repo root.
+# External APIs (repo_spec S8)
 # ---------------------------------------------------------------------------
+# Wikimedia's User-Agent policy asks for a way to contact the operator of a
+# tool, and accepts a URL as well as an email. The project URL identifies
+# the app for every user, so nobody has to hand over a personal address.
+# A developer can still append their own with WIKIPEDIA_WRAPPED_EMAIL.
 CONTACT_EMAIL_ENV_VAR = "WIKIPEDIA_WRAPPED_EMAIL"
-CONTACT_EMAIL_FILE = PROJECT_ROOT / "contact_email.txt"
-
-
-def get_contact_email() -> str:
-    email = os.environ.get(CONTACT_EMAIL_ENV_VAR, "").strip()
-    if not email and CONTACT_EMAIL_FILE.exists():
-        email = CONTACT_EMAIL_FILE.read_text(encoding="utf-8").strip()
-    if not email:
-        raise RuntimeError(
-            "No contact email configured. Wikimedia requires a real contact "
-            f"address in API User-Agent headers; set the {CONTACT_EMAIL_ENV_VAR} "
-            f"environment variable or create {CONTACT_EMAIL_FILE.name} "
-            "(git-ignored) in the project root containing your email."
-        )
-    return email
 
 
 def get_user_agent() -> str:
-    return f"WikipediaWrapped/0.1 ({get_contact_email()})"
+    """WikipediaWrapped/<version> (<project url>[; <optional email>])."""
+    contact = PROJECT_URL
+    email = os.environ.get(CONTACT_EMAIL_ENV_VAR, "").strip()
+    if email:
+        contact = f"{contact}; {email}"
+    return f"{APP_NAME}/{APP_VERSION} ({contact})"
 
 
 WIKI_LANG = "en"

@@ -25,6 +25,9 @@ dependencies:
   - tqdm=4.*
   - pyarrow=17.*
   - tzlocal=5.*
+  # -- Per-user data directory (~/Library/Application Support, %APPDATA%,
+  #    XDG): the one place the app writes; see config.user_data_dir.
+  - platformdirs=4.*
   # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
   - matplotlib-base=3.9.*
   # -- Session-network metrics (in/out-degree, PageRank)

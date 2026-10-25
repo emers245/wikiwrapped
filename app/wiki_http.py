@@ -1,8 +1,9 @@
 """Shared Wikimedia HTTP etiquette (repo_spec S8).
 
-One place for the rules every API client must follow: identify with a real
-contact address (User-Agent and Api-User-Agent), and back off exponentially
-on HTTP 429/5xx. Used by normalize, topics, embeddings, and pageviews so
+One place for the rules every API client must follow: identify the tool
+with a way to reach its operator (User-Agent and Api-User-Agent; the
+project URL, see config.get_user_agent), and back off exponentially on HTTP
+429/5xx. Used by normalize, topics, embeddings, and pageviews so
 the policy exists exactly once.
 
 (Not in the S4 module list; factored out when a second client needed the

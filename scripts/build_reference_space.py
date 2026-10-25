@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="pageviews hour-file .gz (default %(default)s)")
     parser.add_argument("--db", type=Path, default=config.DB_PATH,
                         help="database for the shared caches (default %(default)s)")
-    parser.add_argument("--out", type=Path, default=config.REFERENCE_DIR,
+    parser.add_argument("--out", type=Path, default=config.DEV_REFERENCE_DIR,
                         help="artifact output dir (default %(default)s)")
     args = parser.parse_args(argv)
 

@@ -17,13 +17,63 @@ conda activate wikipedia-wrapped
 python scripts/check_env.py --full
 ```
 
-Wikimedia APIs require a contact email in the User-Agent header. Provide
-yours one of two ways (it is never committed to git):
+Wikimedia asks every API client to identify itself. The app sends
+`WikipediaWrapped/<version> (https://github.com/emers245/wikipedia-wrapped)`,
+so no personal contact address is needed. A developer who wants their own
+address in it as well can set `WIKIPEDIA_WRAPPED_EMAIL`; it is appended, never
+required. (`contact_email.txt` is no longer read and can be deleted.)
+
+### Where the app keeps its files
+
+The program folder is treated as read-only. Everything the app writes is
+per-user data, in the platform's standard location:
+
+| OS | User-data directory |
+|---|---|
+| macOS | `~/Library/Application Support/WikipediaWrapped` |
+| Windows | `%APPDATA%\WikipediaWrapped` |
+| Linux | `$XDG_DATA_HOME/WikipediaWrapped` (usually `~/.local/share/...`) |
+
+Inside it: `data/visits.jsonl` (the visit log), `data/app.db`,
+`data/sync_state.json`, `config.local.toml`, `tokens/`, any
+`client_secret*.json`, `logs/`, and `cache/`.
+
+To work against a scratch copy instead, point the whole app somewhere else:
 
 ```bash
-export WIKIPEDIA_WRAPPED_EMAIL="you@example.com"   # environment variable, or:
-echo "you@example.com" > contact_email.txt          # git-ignored file at repo root
+export WIKIPEDIA_WRAPPED_DATA_DIR=/tmp/ww-scratch
 ```
+
+The test suite does this automatically (`tests/conftest.py`), so no test can
+touch real data.
+
+Read-only app resources (the UMAP reference space) come from
+`WIKIPEDIA_WRAPPED_RESOURCE_DIR` if set, then from an installed app's
+resource folder (wired up by the packaging step), then from the repo's
+`data/reference/` in a dev checkout.
+
+### Migrating from a repo-local checkout
+
+Before this change the same files lived in the repo (`data/`,
+`config.local.toml`, `tokens/`, `client_secret*.json`). Nothing moves
+automatically. Copy them over explicitly:
+
+```bash
+python -m app.migrate --dry-run   # show what would be copied
+python -m app.migrate             # copy, verify, report
+```
+
+It only ever **copies**: the repo files are hashed before and after and are
+never modified or deleted. Each copy is verified (SHA-256, or SQLite's
+integrity check plus a full-dump hash for `app.db`). A destination file that
+already exists and differs is left alone and reported as a conflict, with one
+exception: if both visit logs exist, the repo's records are appended to the
+new one (exact dedup), so neither loses a visit. Re-running is safe.
+
+Until the migration has run, `python -m app.sync` warns and `GET /health`
+reports `legacy_data`, so a fresh log cannot quietly start in the new
+location while the old one sits in the repo. Once you have checked the app
+against the new location, deleting the repo copies is up to you.
 
 ## Usage (Phase 1 pipeline)
 
@@ -77,20 +127,22 @@ python extract/extract_history.py --input export.json
 
 ### Where your history is stored
 
-`data/visits.jsonl` is an append-only log with one JSON record per raw visit
-(`url`, `title`, `timestamp`, `source`, `account`). It is the source of
-truth; `data/app.db` is derived from it and can be deleted and rebuilt with
+`data/visits.jsonl` (in the user-data directory, see above) is an
+append-only log with one JSON record per raw visit (`url`, `title`,
+`timestamp`, `source`, `account`). It is the source of truth; `data/app.db`
+is derived from it and can be deleted and rebuilt with
 `python -m app.sync --rebuild`.
 
 **This distinction matters.** Chrome expires local history after about 90
 days, and Takeout archives can be deleted from Drive at any time. The log is
 the app's own permanent record: once a visit reaches it, deleting local
 Chrome history, the archives, or `app.db` cannot lose it. It is the one file
-worth backing up. Both are under `data/`, which is git-ignored.
+worth backing up.
 
-**Browsing history never leaves this machine.** The log, the database, the
-extractor's output, and any Takeout archive in the tree are all git-ignored,
-so none of it can be pushed to a remote. (The JSON files under
+**Browsing history never leaves this machine.** The log and the database live
+in the user-data directory, outside any git checkout. The extractor's output
+and any Takeout archive left in the tree are git-ignored, so none of it can
+be pushed to a remote. (The JSON files under
 `reference_code/` predate this rule and are already public; they are left
 as they are.)
 
@@ -119,7 +171,8 @@ To see where you stand per source:
 ```bash
 python -c "
 import json, collections
-rows = [json.loads(l) for l in open('data/visits.jsonl')]
+import config
+rows = [json.loads(l) for l in open(config.VISIT_LOG_PATH)]
 by = collections.defaultdict(list)
 for r in rows: by[(r['source'], r['account'])].append(r['timestamp'])
 for k in sorted(by, key=str):
@@ -168,8 +221,9 @@ You have to do this part yourself; it cannot be scripted.
 5. Under **Data access**, **Add or remove scopes**, and add
    `https://www.googleapis.com/auth/drive.readonly`. Nothing else.
 6. **Clients > Create client**, application type **Desktop app**. Download
-   the client secret JSON and save it in the project root. The filename
-   matches `client_secret*.json`, which is git-ignored.
+   the client secret JSON and save it in the user-data directory (see
+   "Where the app keeps its files"). The filename must match
+   `client_secret*.json`; alternatively, give its path when setup asks.
 
 **Publishing status.** While the app stays in "Testing", Google expires
 refresh tokens after roughly **7 days**. The sync handles this gracefully:
@@ -202,9 +256,9 @@ python scripts/setup_takeout.py
 
 It asks whether to enable the integration, runs the browser OAuth flow, and
 offers to authorize additional accounts (one token file per account under
-`tokens/`, git-ignored, owner-only permissions). It then asks whether to
-sync on launch and writes everything to `config.local.toml`, also
-git-ignored.
+`tokens/` in the user-data directory, owner-only permissions). It then asks
+whether to sync on launch and writes everything to `config.local.toml`,
+also in the user-data directory.
 
 Re-run it any time to add another account or change a preference: it loads
 the existing config, changes only what you answer, and writes it back.
@@ -478,12 +532,13 @@ vertical bars did not.
 
 ```
 run.sh                       # one-command launcher (sync + server + browser)
-config.py                    # paths, API user-agent, timezone, request policy
-config.local.toml            # your preferences + accounts (git-ignored)
+config.py                    # paths (user data vs resources), user-agent, timezone
+
 extract/extract_history.py   # standalone: Takeout zip / Chrome DB / JSON
                              #   -> standardized JSON. The only browser-aware code.
 app/
   visitlog.py                # append-only JSONL log: the source of truth
+  migrate.py                 # opt-in copy of repo-local data to the user-data dir
   sync.py                    # check-on-launch pass over every input source
   drive.py                   # read-only Google Drive client (lazy imports)
   dedup.py                   # collapse one visit seen by two sources
@@ -494,8 +549,7 @@ scripts/
   setup_takeout.py           # interactive, re-runnable OAuth + preferences
   compare_sources.py         # measure timestamp drift to set the dedup tolerance
   build_reference_space.py, check_env.py
-data/                        # visits.jsonl, app.db, reference artifacts (git-ignored)
-tokens/                      # one OAuth token per account (git-ignored)
+data/reference/              # read-only UMAP reference space (dev resource location)
 tests/                       # pytest suite
 reference_code/              # prior exploratory scripts (read-only reference)
 ```
