@@ -1,0 +1,29 @@
+# Tools for BUILDING the installers, kept in their own environment so they
+# never mix with the app's runtime or dev dependencies.
+#
+#   conda env create -f packaging/build-tools.yml
+#   conda run -n wikipedia-wrapped-build conda-lock --help
+#
+# conda-lock    solves packaging/runtime.yml for every target platform and
+#               writes explicit, hash-pinned lock files (Milestone 1).
+# constructor   turns a lock file plus extra files into a .pkg / .exe
+#               installer (Milestone 3).
+# rattler-build builds the app's own code into a small local conda package,
+#               which is how menuinst shortcuts get installed (Milestone 3).
+# uv            resolves the pywebview wheels for each TARGET platform
+#               (packaging/lock_wheels.py). Plain pip cannot: it evaluates
+#               environment markers such as sys_platform == "darwin" against
+#               the machine it runs on, not the platform being locked for.
+#
+# Pinned to the versions the build was developed against (2026-10-24). Bump
+# deliberately: each is a tool whose output format matters.
+name: wikipedia-wrapped-build
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12.*
+  - conda-lock=4.0.3
+  - constructor=3.17.3
+  - rattler-build=0.77.0
+  - uv=0.13.5

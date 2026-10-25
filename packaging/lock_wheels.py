@@ -1,0 +1,143 @@
+"""Lock the pip-installed wheels (pywebview and its pip-only dependencies)
+for every target platform, with sha256 hashes.
+
+    conda run -n wikipedia-wrapped-build python packaging/lock_wheels.py
+
+Reads packaging/wheels/requirements.in and the conda locks in
+packaging/locks/, and writes packaging/wheels/requirements-<platform>.txt.
+
+Why each step:
+
+- uv, not pip, does the resolving. A resolution for another platform has to
+  evaluate environment markers (pywebview needs pyobjc only where
+  sys_platform == "darwin", pythonnet only on win32) for THAT platform; pip
+  evaluates them for the machine it runs on, so a Windows lock made on a Mac
+  would be wrong. uv's --python-platform evaluates them for the target.
+- Anything the platform's conda lock already provides (typing_extensions,
+  cffi, ...) is dropped, so conda stays the owner of those packages and pip
+  installs only what conda-forge cannot supply. The installer then runs
+  pip with --no-deps, so it never reaches for a package that is not listed.
+- --generate-hashes pins each wheel's sha256: pip refuses (with
+  --require-hashes) to install a file that differs from what was locked.
+
+The output is plain pip requirements syntax, readable by anyone, and used
+twice: at build time to download the wheels (pip download --require-hashes)
+and at install time to install them offline (pip install --no-index).
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+LOCKS = HERE / "locks"
+WHEELS = HERE / "wheels"
+INPUT = WHEELS / "requirements.in"
+
+PYTHON_VERSION = "3.11"
+
+# Dependencies PyPI publishes only as source archives (no wheel). Building
+# from source on a user's machine is exactly what the installer must never
+# do, so these come from conda-forge instead (packaging/runtime.yml) and are
+# dropped from the pip list below. uv is still allowed to read their
+# metadata from the source archive, purely so the resolution can complete.
+CONDA_SUPPLIED_SOURCE_ONLY = ["proxy-tools"]
+
+# conda platform -> the target triple uv resolves for. The macOS minimum
+# matches what the bundled conda-forge Python supports.
+PLATFORMS = {
+    "osx-64": "x86_64-apple-darwin",
+    "osx-arm64": "aarch64-apple-darwin",
+    "win-64": "x86_64-pc-windows-msvc",
+}
+
+
+def normalize(name: str) -> str:
+    """PEP 503 name normalization, so "pyobjc-framework-Cocoa", conda's
+    "pyobjc-framework-cocoa" and "typing_extensions" compare correctly."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def conda_package_names(platform: str) -> set[str]:
+    """Package names in an explicit conda lock (name-version-build.ext)."""
+    names = set()
+    for line in (LOCKS / f"{platform}.txt").read_text(encoding="utf-8").splitlines():
+        if not line.startswith("http"):
+            continue
+        filename = line.split("#")[0].rsplit("/", 1)[-1]
+        stem = re.sub(r"\.(conda|tar\.bz2)$", "", filename)
+        names.add(normalize(stem.rsplit("-", 2)[0]))
+    return names
+
+
+def resolve(platform: str) -> str:
+    """uv's full resolution for one platform, with hashes."""
+    result = subprocess.run(
+        [
+            "uv", "pip", "compile", str(INPUT),
+            "--python-version", PYTHON_VERSION,
+            "--python-platform", PLATFORMS[platform],
+            "--only-binary", ":all:",
+            *[arg for name in CONDA_SUPPLIED_SOURCE_ONLY for arg in ("--no-binary", name)],
+            "--generate-hashes",
+            "--no-header", "--no-annotate", "--quiet",
+        ],
+        check=True, capture_output=True, text=True,
+    )
+    return result.stdout
+
+
+def split_requirements(text: str) -> list[list[str]]:
+    """Requirement blocks: a "name==version \\" line plus its hash lines."""
+    blocks: list[list[str]] = []
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[0].isspace():
+            blocks[-1].append(line)
+        else:
+            blocks.append([line])
+    return blocks
+
+
+def lock(platform: str) -> tuple[list[str], list[str]]:
+    """(kept requirement names, names dropped because conda provides them)."""
+    provided = conda_package_names(platform)
+    kept_blocks, kept, dropped = [], [], []
+    for block in split_requirements(resolve(platform)):
+        name = block[0].split("==")[0].strip()
+        if normalize(name) in provided:
+            dropped.append(name)
+        elif normalize(name) in map(normalize, CONDA_SUPPLIED_SOURCE_ONLY):
+            raise SystemExit(
+                f"{name} has no wheel and is not in the {platform} conda lock; "
+                "add it to packaging/runtime.yml and re-run conda-lock."
+            )
+        else:
+            kept.append(name)
+            kept_blocks.append("\n".join(block))
+    header = (
+        f"# pip wheels for {platform}, generated by packaging/lock_wheels.py\n"
+        "# from packaging/wheels/requirements.in. Do not edit by hand.\n"
+        "# Installed offline at install time with:\n"
+        "#   pip install --no-index --no-deps --require-hashes -r <this file>\n"
+        f"# Provided by conda instead (not listed): {', '.join(sorted(dropped)) or 'none'}\n"
+    )
+    out = WHEELS / f"requirements-{platform}.txt"
+    out.write_text(header + "\n".join(kept_blocks) + "\n", encoding="utf-8")
+    return kept, dropped
+
+
+def main() -> int:
+    for platform in PLATFORMS:
+        kept, dropped = lock(platform)
+        print(f"{platform:10s} pip: {', '.join(kept)}")
+        print(f"{'':10s} conda already has: {', '.join(sorted(dropped)) or 'none'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

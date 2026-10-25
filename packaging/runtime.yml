@@ -1,0 +1,75 @@
+# What the INSTALLED app needs to run, and nothing else.
+#
+# This is the source the installers are built from: conda-lock solves it
+# for each target platform into packaging/locks/<platform>.txt, and
+# constructor installs exactly those locked packages. environment.yml (the
+# developer environment) is this list plus dev tools, and
+# tests/test_environment_specs.py fails if the two ever disagree.
+#
+# Every entry is here because the app imports it at runtime (an import
+# audit of config.py, app/, extract/ and scripts/enrich_pending.py, plus
+# what unpickling the UMAP reducer imports; see packaging/README.md):
+#
+#   fastapi, uvicorn        the local API server (app/api.py, app/launcher.py)
+#   requests                Wikimedia API calls (app/wiki_http.py, normalize)
+#   numpy                   embeddings and storage
+#   sentence-transformers   MiniLM embeddings (app/embeddings.py); pulls in
+#                           pytorch, transformers, tokenizers, safetensors
+#   umap-learn              unpickling and .transform() of the reference
+#                           reducer (app/umap_space.py); pulls in numba,
+#                           llvmlite, pynndescent, scikit-learn, scipy
+#   networkx                the reading-thread graph (app/network.py)
+#   tqdm, tzlocal, platformdirs   progress bars, local timezone, data dir
+#   google-*                the Advanced Drive route (app/drive.py, lazy)
+#   pip                     installs the pywebview wheels at install time
+#
+# Deliberately absent: pytest, httpx (tests only), matplotlib (ad-hoc
+# plots), pandas and pyarrow (imported nowhere; sklearn imports pandas only
+# opportunistically, when it happens to be installed), python-multipart
+# (no form uploads). pywebview is not here because conda-forge has no
+# macOS build of it; it is installed from pinned, hashed wheels instead
+# (packaging/wheels/).
+name: wikipedia-wrapped-runtime
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # -- Fragile cluster: these pins must move together, and the reference
+  #    space's pickled reducer depends on them. Bumping any of them means
+  #    rebuilding the reference space (packaging/README.md).
+  - python=3.11.*
+  - numpy=1.26.4
+  - numba=0.60.0
+  - llvmlite=0.43.0
+  - umap-learn=0.5.7
+  - scikit-learn=1.5.*
+  # The pickled reducer contains a pynndescent search index, so pynndescent
+  # belongs to this cluster too. 0.5.13 is what built the current reference
+  # space; left unpinned, the solver picks 0.6.0.
+  - pynndescent=0.5.13
+  # -- Embeddings. CPU builds only: conda-forge also has CUDA builds of
+  #    pytorch for Windows, which would add gigabytes. "cpu_*" matches
+  #    cpu_mkl (Intel macOS, Windows) and cpu_generic (Apple Silicon).
+  - pytorch=2.10.0=cpu_*
+  - sentence-transformers=3.2.1
+  # -- Data + HTTP
+  - requests=2.32.*
+  - tqdm=4.*
+  - tzlocal=5.*
+  - platformdirs=4.*
+  # -- Session-network metrics (in/out-degree, PageRank)
+  - networkx=3.*
+  # -- Google Drive / Takeout ingestion (read-only). Optional at runtime:
+  #    app/drive.py imports these lazily.
+  - google-api-python-client=2.*
+  - google-auth-oauthlib=1.*
+  - google-auth=2.*
+  # -- API layer
+  - fastapi=0.115.*
+  - uvicorn=0.32.*
+  # -- Installs the pywebview wheels (packaging/wheels/) at install time.
+  - pip
+  # -- A pywebview dependency that PyPI publishes only as source (no wheel),
+  #    which an installer must never build on a user's machine. conda-forge
+  #    has it prebuilt, so conda supplies it and pip skips it.
+  - proxy-tools=0.1.0

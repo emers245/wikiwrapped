@@ -1,0 +1,11 @@
+# The only packages installed with pip rather than conda, at install time,
+# from wheels bundled in the installer (never from PyPI on the user's
+# machine). pywebview is here because conda-forge has no macOS build of it
+# and two of its macOS dependencies (pyobjc-framework-webkit, -security) do
+# not exist for osx-arm64 at all (checked 2026-10-24); for consistency it
+# comes from pip on every platform, exactly as in the dev environment.
+#
+# Must match the pip pin in environment.yml (tests/test_environment_specs.py).
+# After changing it, regenerate the locks:
+#     conda run -n wikipedia-wrapped-build python packaging/lock_wheels.py
+pywebview==6.2.1
