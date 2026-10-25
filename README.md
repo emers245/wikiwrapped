@@ -4,7 +4,9 @@ A visualization tool for personalized Wikipedia reading history: export your
 browser history, extract the Wikipedia visits, and explore stats, topics, and
 an embedding map of what you read.
 
-Specification: `repo_spec.md` | Phase 1 plan: `claude_phase1.md`
+Specification: `repo_spec.md` | Phase 1 plan: `claude_phase1.md` |
+**User help: [`app/static/help.html`](app/static/help.html)** (the Help
+button in the app; also readable on its own in a browser)
 
 ## Setup
 
@@ -252,52 +254,29 @@ Off until you enable it. Access is **read-only** and password-free. The single O
 Google password, and it never deletes, moves, or modifies anything in your
 Drive. Deciding how long to keep archives is yours to make by hand.
 
-#### 1. Create the OAuth client (manual, in Google Cloud Console)
+#### 1. Create the OAuth client, and 2. schedule Takeout
 
-You have to do this part yourself; it cannot be scripted.
+The step-by-step instructions for both are user help, so they live in one
+place: [`app/static/help.html`](app/static/help.html) (the app's Help
+button), sections **Setting up Google Takeout** and **Advanced: signing in
+to Google Drive**. Google's own wording there was checked on 2026-10-24;
+anything that could not be confirmed is marked `TODO(Joe): verify` on the
+page.
 
-1. Go to <https://console.cloud.google.com/> and **create a project** (or
-   pick an existing one).
-2. **APIs and Services > Library**, search for **Google Drive API**, and
-   click **Enable**.
-3. Open **Google Auth Platform** (previously "OAuth consent screen") and
-   configure it:
-   - **Audience: External**. Internal is only available to Workspace
-     organizations.
-   - Fill in the app name and your own email for the support and developer
-     contact fields.
-4. Under **Audience > Test users**, **add every Google account whose history
-   you want to read**. An account that is not listed cannot authorize the
-   app.
-5. Under **Data access**, **Add or remove scopes**, and add
-   `https://www.googleapis.com/auth/drive.readonly`. Nothing else.
-6. **Clients > Create client**, application type **Desktop app**. Download
-   the client secret JSON and save it in the user-data directory (see
-   "Where the app keeps its files"). The filename must match
-   `client_secret*.json`; alternatively, give its path when setup asks.
+Developer notes that do not belong in the user help:
 
-**Publishing status.** While the app stays in "Testing", Google expires
-refresh tokens after roughly **7 days**. The sync handles this gracefully:
-it reports `re-authorization needed for account X` and carries on with
-whatever other sources it can reach, rather than crashing or silently
-skipping. When it happens, run:
-
-```bash
-python scripts/setup_takeout.py --authorize you@example.com
-```
-
-#### 2. Schedule Takeout to deliver to Drive
-
-1. Go to <https://takeout.google.com/>.
-2. **Deselect all**, then select **Chrome** only. Use *All Chrome data
-   included* to narrow it to **History** so the archives stay small.
-3. Choose **Export every 2 months for 1 year** to get a rolling series
-   instead of a single snapshot.
-4. Set **Delivery: Add to Drive**, and **File type: .zip**.
-
-Delivering to Drive rather than email matters: **emailed Takeout links
-expire after 7 days**, while files in Drive persist until you remove them.
-`.tgz` archives are listed but skipped, because the extractor reads `.zip`.
+- **Audience: External** is required; Internal is only available to
+  Workspace organizations. An account not listed under **Test users**
+  cannot authorize the app.
+- The only scope is `https://www.googleapis.com/auth/drive.readonly`.
+- **Publishing status.** While the app stays in "Testing", Google expires
+  refresh tokens after roughly **7 days**. The sync handles this gracefully:
+  it reports `re-authorization needed for account X` and carries on with
+  whatever other sources it can reach, rather than crashing or silently
+  skipping. From a terminal: `python scripts/setup_takeout.py --authorize you@example.com`.
+- Deliver to Drive rather than email: **emailed Takeout links expire after
+  about 7 days**, while files in Drive persist until removed. `.tgz`
+  archives are listed but skipped, because the extractor reads `.zip`.
 
 #### 3. Run setup
 
@@ -595,6 +574,9 @@ Endpoints: `/health`, `/jobs`, `POST /jobs/sync`, `POST /ingest`,
 Run tests with `pytest` (`-m "not integration"` to stay offline).
 
 ## Dashboard (Phase 2)
+
+How to read each view is in the user help (`app/static/help.html`,
+"Reading the dashboard"); this section is about how it is built.
 
 The launcher opens the interactive dashboard. It is a single page (vanilla
 JS, no build step; D3 and cytoscape.js vendored in `app/static/vendor/`,

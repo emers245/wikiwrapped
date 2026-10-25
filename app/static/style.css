@@ -549,3 +549,45 @@ body.resizing .slider-fill { cursor: grabbing; }
   border-radius: 5px;
 }
 details.setup-section > summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+
+/* -- Help viewer (help.js) ---------------------------------------------- */
+/* Above the Settings overlay (z-index 50): help links in Settings open on
+   top of it, and closing Help returns to Settings where it was. */
+#help {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 30px 16px;
+  background: rgba(58, 58, 56, 0.25);
+}
+#help-card {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+#help-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+#help-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+#help-head a { font-size: 13px; color: var(--accent); }
+#help-close {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--ink);
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#help-frame { flex: 1 1 auto; width: 100%; border: none; background: var(--bg); }

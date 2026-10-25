@@ -28,6 +28,7 @@
   <button id="filter-note" class="hidden" title="Choose accounts in Settings"></button>
   <div id="data-warning" class="hidden"></div>
   <button id="btn-settings" class="header-btn" title="Sources, sync, and accounts">Settings</button>
+  <button id="btn-help" class="header-btn" title="How to use the app">Help</button>
 </header>
 
 <aside id="panels">
@@ -94,10 +95,26 @@
   </div>
 </div>
 
+<!-- Help viewer (help.js): app/static/help.html, the single source of the
+     user help, in a frame over everything else (Settings links open it). -->
+<div id="help" class="hidden" role="dialog" aria-modal="true" aria-label="Help">
+  <div id="help-card">
+    <div id="help-head">
+      <h2>Help</h2>
+      <span class="setup-spacer"></span>
+      <a id="help-external" href="/static/help.html" target="_blank"
+         rel="noopener">Open in browser</a>
+      <button id="help-close">Close</button>
+    </div>
+    <iframe id="help-frame" title="Wikipedia Wrapped Help"></iframe>
+  </div>
+</div>
+
 <script src="/static/panels.js"></script>
 <script src="/static/map.js"></script>
 <script src="/static/network.js"></script>
 <script src="/static/main.js"></script>
 <script src="/static/setup.js"></script>
+<script src="/static/help.js"></script>
 </body>
 </html>
