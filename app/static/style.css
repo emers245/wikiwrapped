@@ -89,10 +89,30 @@ header h1 {
   color: #fff;
 }
 #summary-line { margin-left: auto; font-size: 13px; color: var(--ink-soft); }
+/* Sits after the summary so it reads as a footnote to it, not as an error. */
+#data-warning {
+  font-size: 12px;
+  color: #a8763f;
+  background: #f7efe2;
+  border: 1px solid #e6d6bb;
+  border-radius: 4px;
+  padding: 3px 8px;
+}
 
 /* -- main viz ----------------------------------------------------------- */
 #viz { grid-column: 2; grid-row: 2; position: relative; overflow: hidden; }
 #umap-view, #network-view { position: absolute; inset: 0; }
+/* The inactive view is hidden but still laid out, rather than removed with
+   display:none. Two things depend on that. cytoscape measures its
+   container to lay the graph out, and a display:none container measures
+   zero - which is why the graph could only ever be built after its tab was
+   clicked. And WWmap.computeScales() reads the same box on resize, so a
+   window resized while Threads was showing used to collapse the map's
+   scales to nothing. */
+#umap-view.inactive, #network-view.inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
 #backdrop, #umap-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 #backdrop { transition: opacity 0.25s; }
 #umap-svg circle {
@@ -100,6 +120,10 @@ header h1 {
   transition: opacity 0.2s;
   stroke: #fff;
   stroke-width: 0.8;
+  /* The zoom transform scales the group, so a plain stroke would thicken
+     with it and swallow the dot at high zoom. map.js cancels the scale on
+     the radius; this does the same for the outline. */
+  vector-effect: non-scaling-stroke;
 }
 .hidden { display: none !important; }
 #viz-message {
@@ -109,6 +133,30 @@ header h1 {
   color: var(--ink-soft);
   font-size: 15px;
 }
+
+/* -- launch overlay ------------------------------------------------------ */
+/* Covers the whole app, header included, until everything is ready. The
+   cose layout blocks the main thread for seconds, and a half-built
+   dashboard sitting frozen underneath reads as a hang; this at least says
+   what is happening. It cannot animate - nothing on the main thread can
+   while that layout runs - so it does not pretend to, and stays still.
+
+   Dismissed by fading out rather than by display:none: opacity and
+   pointer-events are enough to take it out of the way, and that avoids a
+   reflow of everything underneath at the moment the app becomes usable. */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--ink-soft);
+  font-size: 16px;
+  letter-spacing: 0.3px;
+  transition: opacity 0.25s;
+}
+#loading.done { opacity: 0; pointer-events: none; }
 
 /* -- popup -------------------------------------------------------------- */
 #popup {
@@ -212,6 +260,49 @@ body.panels-stowed #panels-resizer { display: none; }
 .panel .dimmable { transition: opacity 0.2s; }
 .panel .marker { stroke: var(--ink); stroke-width: 1.2; opacity: 0.8; }
 
+/* -- panel selections and sweep controls -------------------------------- */
+/* Everything below styles marks that panels.js draws inside the SVGs. It
+   lives here rather than in attributes because these are states - hovered,
+   selected, playing - and a stylesheet expresses those far better than a
+   pile of conditional .attr() calls would. */
+.cat-row { cursor: pointer; }
+.cat-hit, .hour-hit { fill: transparent; }
+.cat-row:hover .cat-hit { fill: rgba(114, 149, 184, 0.07); }
+.cat-selected { fill: none; stroke: var(--accent); stroke-width: 1; }
+.hour-bar { cursor: pointer; }
+.hour-bar:hover .hour-hit { fill: rgba(114, 149, 184, 0.07); }
+.hour-fill { transition: fill 0.15s; }
+
+/* The selected span, drawn behind the daily series. */
+.range-band { fill: rgba(114, 149, 184, 0.13); pointer-events: none; }
+.slider-track { stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+.slider-fill {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  cursor: grab;
+}
+body.resizing .slider-fill { cursor: grabbing; }
+.slider-grip {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  cursor: ew-resize;
+}
+.slider-grip:hover, .slider-grip:focus-visible {
+  fill: var(--accent);
+  outline: none;
+}
+.grip-label { fill: var(--ink-soft); pointer-events: none; }
+
+.ctl { cursor: pointer; }
+.ctl rect { fill: #ece9e2; stroke: #d8d4cb; stroke-width: 0.8; }
+.ctl:hover rect { fill: #e2ded5; }
+.ctl text { fill: #6b6a64; }
+.ctl-glyph { fill: #6b6a64; }
+.ctl.on rect { fill: var(--accent); stroke: var(--accent); }
+.ctl.on text, .ctl.on .ctl-glyph { fill: #fff; }
+
 /* -- narrow screens ----------------------------------------------------- */
 /* Too little room to give the sidebar its own column, so it floats over
    the visualization as a drawer instead. Taking it out of the grid flow
@@ -219,7 +310,8 @@ body.panels-stowed #panels-resizer { display: none; }
    Position is fixed rather than absolute on purpose: an absolutely
    positioned grid child that has a definite grid-row resolves its offsets
    against that grid area, so a top of --header-h would land one header
-   below the header. Fixed always resolves against the viewport. */
+   below the header. Fixed always resolves against the viewport.
+
    The drag handle is hidden here and a width dragged out on a large
    window is capped against the viewport instead. Capping --panel-w-eff
    rather than --panel-w is what makes this work: the drag handle writes

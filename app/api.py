@@ -149,6 +149,9 @@ def create_app(
             "visits": storage.count_visits(conn),
             "reference_space": reference,
             "sources": storage.visit_source_summary(conn),
+            # Non-zero means an ingest has outrun /enrich; run.sh checks
+            # this on launch and the dashboard header surfaces it.
+            "enrichment": storage.count_enrichment_gaps(conn),
             "sync": {
                 "last_attempt": state.get("last_attempt"),
                 "last_success": state.get("last_success"),

@@ -103,9 +103,13 @@ def label_titles(
     return report
 
 
-def label_pages(conn: sqlite3.Connection, session=None) -> dict:
+def label_pages(
+    conn: sqlite3.Connection, session=None, progress: bool = False
+) -> dict:
     """Label every visited page missing a topic (the /enrich entry point)."""
-    report = label_titles(conn, storage.all_page_titles(conn), session)
+    report = label_titles(
+        conn, storage.all_page_titles(conn), session, progress=progress
+    )
     return {
         "pages_labeled": report["labeled"],
         "pages_unclassified": report["unclassified"],

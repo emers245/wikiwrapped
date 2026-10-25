@@ -61,6 +61,16 @@ def test_health_reports_counts_and_missing_reference(client):
     assert data["reference_space"] is None  # not built in this fixture
 
 
+def test_health_reports_enrichment_gaps(client):
+    """seed() labels and projects Jainism but not Cat, which is the shape a
+    bulk ingest leaves behind: pages present, enrichment not caught up."""
+    seed(client)
+    assert client.get("/health").json()["enrichment"] == {
+        "topics_missing": 1,
+        "coords_missing": 1,
+    }
+
+
 def test_ingest_document_body_and_idempotency(client, monkeypatch):
     from app import normalize
 

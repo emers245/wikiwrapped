@@ -381,6 +381,29 @@ def count_visits(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM visits").fetchone()[0]
 
 
+def count_enrichment_gaps(conn: sqlite3.Connection) -> dict[str, int]:
+    """How many pages /enrich has not caught up with yet.
+
+    Ingestion and enrichment are separate passes, so a bulk import leaves
+    pages with no topic row and no projected coordinates. Both gaps are
+    silent in the UI - one shows up as "Unclassified", the other simply as
+    a page missing from the map - so they are counted explicitly here.
+    """
+    return {
+        name: conn.execute(
+            f"""
+            SELECT COUNT(*) FROM pages
+            LEFT JOIN {table} ON {table}.canonical_title = pages.canonical_title
+            WHERE {table}.canonical_title IS NULL
+            """
+        ).fetchone()[0]
+        for name, table in (
+            ("topics_missing", "topic_cache"),
+            ("coords_missing", "umap_coords"),
+        )
+    }
+
+
 def visit_timestamps(conn: sqlite3.Connection) -> list[str]:
     return [
         row["timestamp"]
@@ -469,13 +492,19 @@ def get_topic(conn: sqlite3.Connection, canonical_title: str) -> dict | None:
 
 def page_topics(conn: sqlite3.Connection) -> list[dict]:
     """One row per unique page with its cached topic labels (NULL if the
-    page has not been labeled yet)."""
+    page has not been labeled yet).
+
+    has_topic_row separates the two ways the labels can be NULL: 1 means
+    the model was asked and returned nothing, 0 means it was never asked.
+    Both render as "Unclassified", but only the second is a missing step.
+    """
     return [
         dict(row)
         for row in conn.execute(
             """
             SELECT pages.canonical_title, topic_cache.macro_topic,
-                   topic_cache.raw_label
+                   topic_cache.raw_label,
+                   topic_cache.canonical_title IS NOT NULL AS has_topic_row
             FROM pages
             LEFT JOIN topic_cache
                 ON topic_cache.canonical_title = pages.canonical_title

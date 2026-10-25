@@ -7,6 +7,7 @@
 #   ./run.sh --no-browser    start the server only
 #   ./run.sh --no-sync       skip the check-on-launch history sync
 #   ./run.sh --force-sync    sync even if one ran recently
+#   ./run.sh --no-enrich     skip topic/embedding enrichment of new pages
 #
 # Finds the conda environment without needing "conda activate" first, waits
 # until the API answers, then opens a browser and hands the terminal back to
@@ -23,6 +24,7 @@ PORT=8000
 OPEN_BROWSER=1
 SYNC=1
 FORCE_SYNC=0
+ENRICH=1
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -33,11 +35,14 @@ usage() {
 Launch the Wikipedia Wrapped dashboard.
 
 Usage: ./run.sh [--port N] [--no-browser] [--no-sync] [--force-sync]
+                [--no-enrich]
 
   --port N        port to serve on (default 8000)
   --no-browser    start the server without opening a browser
   --no-sync       skip the check-on-launch history sync
   --force-sync    sync even if one ran recently (ignores the interval)
+  --no-enrich     serve immediately, leaving newly ingested pages without
+                  topics or map coordinates until /enrich is called
   -h, --help      show this message
 EOF
 }
@@ -55,6 +60,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-sync)
             SYNC=0
+            shift
+            ;;
+        --no-enrich)
+            ENRICH=0
             shift
             ;;
         --force-sync)
@@ -213,6 +222,27 @@ if [ "$SYNC" -eq 1 ]; then
     # shellcheck disable=SC2086
     "$PYTHON" -m app.sync $SYNC_ARGS || \
         echo "Sync did not complete; serving existing data." >&2
+fi
+
+# ---------------------------------------------------------------------------
+# Catch-up enrichment
+# ---------------------------------------------------------------------------
+# Ingestion adds pages; topics, embeddings, and coordinates are a separate
+# pass. Nothing used to run that pass on launch, so a bulk import left most
+# of the history with no topic and no place on the map - visible only as a
+# large "Unclassified" bar and a sparse map, neither of which reads as a
+# missing step.
+#
+# --check first so the common case (nothing new) costs two queries and no
+# output at all; the enrich run itself is API-bound and minutes long, which
+# is why it is announced and why --no-enrich exists. Failure is not fatal:
+# the dashboard serves whatever is already enriched.
+
+if [ "$ENRICH" -eq 1 ] && [ -f data/app.db ]; then
+    if ! "$PYTHON" scripts/enrich_pending.py --check; then
+        "$PYTHON" scripts/enrich_pending.py || \
+            echo "Enrichment did not complete; serving existing data." >&2
+    fi
 fi
 
 echo "Starting Wikipedia Wrapped at $URL (Ctrl-C to stop)"

@@ -60,6 +60,14 @@ window.WWnet = (function () {
             "line-color": "#8f8c83", "target-arrow-color": "#8f8c83",
             "opacity": 1,
         } },
+        /* Filter styles come last so they beat the per-element colour
+           function in the base node rule. Hiding a node hides its edges
+           too, and display:none leaves the laid-out positions alone, so
+           nothing reflows while a sweep runs. */
+        { selector: "node.greyed", style: {
+            "background-color": WW.GREY, "color": "#c2beb6",
+        } },
+        { selector: "node.filtered-out", style: { "display": "none" } },
       ],
     });
 
@@ -88,19 +96,83 @@ window.WWnet = (function () {
     if (cy) cy.elements().removeClass("faded hl");
   }
 
+  /* -- filters ------------------------------------------------------------- */
+  /* Toggling a class on every node each frame of a sweep is the one place
+     in this app where the work is worth avoiding: there are as many nodes
+     as visited pages. So only the nodes whose visibility actually changed
+     are touched, the whole pass runs inside one cytoscape batch, and while
+     the graph is off screen nothing happens at all - the pending flag
+     makes show() catch up in a single pass instead. */
+  let hidden = new Set();
+  let filtersPending = false;
+
+  function applyFilters(topicChanged) {
+    if (!cy) return;
+    if (WW.state.mode !== "network") {
+      filtersPending = true;
+      return;
+    }
+    filtersPending = false;
+    cy.batch(() => {
+      cy.nodes().forEach(node => {
+        const page = node.data("page");
+        const visible = WW.pageVisible(page);
+        if (visible === hidden.has(page.title)) {
+          node.toggleClass("filtered-out", !visible);
+          if (visible) hidden.delete(page.title);
+          else hidden.add(page.title);
+        }
+        if (topicChanged) node.toggleClass("greyed", WW.pageGreyed(page));
+      });
+    });
+  }
+
   function init(appState) {
     state = appState;
   }
 
-  /* Built lazily on first show: cytoscape needs a visible container to
-     measure itself for the layout. */
+  /* Lay the graph out at startup rather than on the first click.
+
+     The cose layout over a graph this size is seconds of blocking work,
+     and it used to be spent the first time the Threads tab was pressed -
+     the one moment the user is waiting on it. Spending it during launch
+     costs the same time but nobody is waiting on the answer yet, and the
+     tab then opens instantly for the rest of the session.
+
+     The rAF-then-timeout is what makes the launch overlay work: the frame
+     callback runs before the paint, and the timeout it queues runs after
+     that paint has been committed. So "Launching..." is on the glass
+     before the layout seizes the main thread, which it could not be if
+     build() were called straight through. `done` fires only once the
+     graph genuinely exists, and is what takes the overlay back down.
+
+     Building at all here is only possible because the inactive view keeps
+     its layout box (see style.css) - cytoscape cannot measure a
+     display:none container. */
+  function prebuild(done) {
+    requestAnimationFrame(() => setTimeout(() => {
+      if (!built) {
+        built = true;
+        build();
+        filtersPending = true;
+      }
+      done();
+    }, 0));
+  }
+
   function show() {
+    // Falls back to building on demand if the tab is somehow reached
+    // before prebuild has run.
     if (!built) {
       built = true;
       build();
+      filtersPending = true;
     } else if (cy) {
       cy.resize();
     }
+    // setMode() flips the container visible before calling us, so by here
+    // WW.state.mode is already "network" and applyFilters will not defer.
+    if (filtersPending) applyFilters(true);
   }
 
   function highlight(page) {
@@ -115,5 +187,5 @@ window.WWnet = (function () {
     if (cy) cy.resize();
   }
 
-  return { init, show, highlight, relayout };
+  return { init, show, prebuild, highlight, relayout, applyFilters };
 })();

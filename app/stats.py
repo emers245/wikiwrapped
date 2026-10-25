@@ -122,11 +122,22 @@ def topic_distribution(conn: sqlite3.Connection) -> dict:
     """Fraction of unique pages (D2) per macro-topic and per raw label.
 
     Pages without a cached topic report as "Unclassified" (matching the
-    old analysis) rather than being dropped."""
+    old analysis) rather than being dropped.
+
+    That bucket conflates two very different things, so `pages_unlabeled`
+    reports the second of them separately: a page the topic model declined
+    to classify has a cache row with NULL labels, while a page that has
+    simply never been sent to the model has no cache row at all. The first
+    is a fact about the page; the second means /enrich has not caught up
+    with the last ingest, and looks identical in the chart. It is the
+    normal state after a bulk import, and without this split the only
+    symptom is one very large grey bar.
+    """
     rows = storage.page_topics(conn)
     total = len(rows)
     macro = Counter(row["macro_topic"] or "Unclassified" for row in rows)
     raw = Counter(row["raw_label"] or "Unclassified" for row in rows)
+    unlabeled = sum(1 for row in rows if not row["has_topic_row"])
 
     def as_list(counter: Counter, key: str) -> list[dict]:
         return [
@@ -139,6 +150,7 @@ def topic_distribution(conn: sqlite3.Connection) -> dict:
 
     return {
         "total_pages": total,
+        "pages_unlabeled": unlabeled,
         "macro_topics": as_list(macro, "macro_topic"),
         "raw_labels": as_list(raw, "raw_label"),
     }
