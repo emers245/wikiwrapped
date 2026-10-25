@@ -50,7 +50,15 @@ def test_unverified_details_are_visibly_marked():
     body = re.sub(r"<!--.*?-->", "", HELP, flags=re.S)
     visible = len(re.findall(r'<span class="todo">TODO\(Joe\)', body))
     assert visible == body.count("TODO(Joe)")
-    assert visible > 0
+
+
+def test_every_help_image_exists():
+    """Screenshots are referenced relative to help.html and ship with it
+    (app/static is part of the installed app), so a typo or a file left
+    out of git would be a broken image in every install."""
+    sources = re.findall(r'<img[^>]*\bsrc="([^"]+)"', HELP)
+    missing = [src for src in sources if not (STATIC / src).is_file()]
+    assert not missing, f"missing help images: {missing}"
 
 
 def test_help_is_plain_ascii():

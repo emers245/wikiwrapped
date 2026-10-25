@@ -12,9 +12,7 @@
 
      Google's wording was checked on 2026-10-24 against Google's own help
      pages (Takeout: support.google.com/accounts/answer/3024190; Drive for
-     desktop: support.google.com/drive/answer/16631477 and 12178485).
-     Anything that could not be confirmed there is marked
-     "TODO(Joe): verify" on the page itself, so it cannot ship unnoticed. -->
+     desktop: support.google.com/drive/answer/16631477 and 12178485). -->
 <style>
   :root {
     --bg: #faf9f6;
@@ -90,6 +88,13 @@
     font-size: 13px;
     border: 2px dashed var(--line);
     border-radius: 6px;
+  }
+  .shot { 
+    display: block; 
+    max-width: 100%; 
+    margin: 12px 0;
+    border: 1px solid var(--line); 
+    border-radius: 6px; 
   }
   ol li, ul li { margin: 4px 0; }
   table { border-collapse: collapse; margin: 10px 0; font-size: 14px; }
@@ -267,15 +272,11 @@ app.</p>
   <li>Go to <a href="https://takeout.google.com/" target="_blank" rel="noopener">takeout.google.com</a>
     and sign in with the Google account whose Chrome history you want.</li>
   <li>Products you use are already ticked. Click
-    <span class="ui">Deselect all</span>
-    <span class="todo">TODO(Joe): verify - Google's own help says only to
-    untick unwanted products; "Deselect all" is from third-party guides</span>,
+    <span class="ui">Deselect all</span>,
     then tick <span class="ui">Chrome</span> only.</li>
   <li>Under Chrome, click <span class="ui">All Chrome data included</span>
-    <span class="todo">TODO(Joe): verify the exact label (Google's help
-    calls it "All data included")</span> and leave only
-    <span class="ui">History</span> ticked
-    <span class="todo">TODO(Joe): verify the item is called History</span>.
+    and leave only
+    <span class="ui">History</span> ticked.
     This keeps the archives small. Click <span class="ui">OK</span>.</li>
   <li>Scroll down and click <span class="ui">Next step</span>.</li>
   <li><span class="ui">Delivery method</span>: choose
@@ -290,17 +291,23 @@ app.</p>
   <li>Leave <span class="ui">Archive size</span> as it is, and click
     <span class="ui">Create export</span>.</li>
 </ol>
-<div class="screenshot">Screenshot placeholder: Takeout with only Chrome &gt; History selected</div>
-<div class="screenshot">Screenshot placeholder: Takeout "Next step" page with Add to Drive, Scheduled exports, Zip files</div>
+<div><img class="shot" src="help-images/Takeout_step1_1.png"
+     alt="Google Takeout > Deselect All"></div>
+<div><img class="shot" src="help-images/Takeout_step1_2.png"
+     alt="Google Takeout with only Chrome Selected"></div>
+<div><img class="shot" src="help-images/Takeout_ChromeContentOptions.png"
+     alt="Google Takeout with only Chrome Selected > History selected"></div>
+<div><img class="shot" src="help-images/Takeout_step2_1.png"
+     alt="Google Takeout Chose File Type, Frequency, and Destination > Export every month for 1 year"></div>
+<div><img class="shot" src="help-images/Takeout_step2_2.png"
+     alt="Google Takeout Chose File Type, Frequency, and Destination > File type > .zip"></div>
 <p>The first archive can take anywhere from a few minutes to a few days;
 Google emails you when it is ready. A scheduled export runs for one year;
 after that, set it up again.
-<span class="todo">TODO(Joe): verify whether Google offers to renew the schedule</span></p>
 
 <h3>Part 2, option A: let Google Drive for desktop bring the archives in (recommended)</h3>
 <ol>
   <li>Install <a href="https://www.google.com/drive/download/" target="_blank" rel="noopener">Google Drive for desktop</a>
-    <span class="todo">TODO(Joe): verify download link</span>
     and sign in with the same Google account.</li>
   <li>Find the folder Takeout delivers into: <span class="ui">Takeout</span>,
     in <span class="ui">My Drive</span>.
@@ -320,9 +327,7 @@ after that, set it up again.
     are not downloaded show a cloud icon), and the app cannot read an
     archive that is not on your computer while you are offline. Right-click
     the Takeout folder, choose <span class="ui">Offline access</span>, then
-    <span class="ui">Available offline</span>.
-    <span class="todo">TODO(Joe): verify the right-click wording in Finder on
-    current macOS (File Provider) and in Windows File Explorer</span>
+    <span class="ui">Available offline</span> (Windows) or  <span class="ui">Make available offline</span> (Mac).
     Alternatively, keep everything on your computer: Drive for desktop
     <span class="ui">Settings &gt; Preferences &gt; Google Drive</span>, and
     under <span class="ui">My Drive syncing options</span> choose
@@ -333,8 +338,10 @@ after that, set it up again.
     Give it a label, such as your Google email, so you can tell accounts
     apart. The app shows how many archives it found.</li>
 </ol>
-<div class="screenshot">Screenshot placeholder: Finder sidebar with Google Drive under Locations</div>
-<div class="screenshot">Screenshot placeholder: the right-click menu with Available offline</div>
+<div><img class="shot" src="help-images/GoogleDrive_DesktopApp.png"
+     alt="Google Drive Desktop App > Open Drive folder"></div>
+<div><img class="shot" src="help-images/GoogleDrive_MakeAvailableOffline.png"
+     alt="Google Drive Desktop App > Open Drive folder > Make available offline"></div>
 
 <h3>Part 2, option B: download the archives yourself</h3>
 <ol>
@@ -368,8 +375,6 @@ files, and never changes or deletes anything in your Drive. The app never
 sees your Google password.</p>
 
 <h3>1. Create your own OAuth client (once, in Google Cloud Console)</h3>
-<span class="todo">TODO(Joe): verify these Console labels; only "Google Auth
-Platform &gt; Clients &gt; Create client" was confirmed on 2026-10-24</span>
 <ol>
   <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>
     and create a project.</li>
@@ -531,15 +536,12 @@ nowhere else, unless a Takeout archive has it.</div>
 <h3 id="uninstall">Uninstalling</h3>
 <ol>
   <li>Quit the app and remove it like any other application.
-    <span class="todo">TODO(Joe): add the installer-specific steps once the
-    installer exists</span></li>
   <li>Delete the data folder above if you no longer want your saved history
     (back up <code>visits.jsonl</code> first if you might).</li>
   <li>If you used the <a href="#advanced">Advanced option</a>, remove the
     app's access to your Google account in your Google Account's
     third-party connections
-    (<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>
-    <span class="todo">TODO(Joe): verify link</span>).</li>
+    (<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>).</li>
 </ol>
 
 </div>
