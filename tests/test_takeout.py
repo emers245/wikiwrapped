@@ -150,9 +150,12 @@ def test_extractor_cli_detects_a_zip_by_magic(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_missing_config_defaults_to_disabled(tmp_path):
+    """Drive stays opt-in, but launch sync is on: local Chrome history
+    expires after ~90 days, and launching is when it gets captured."""
     settings = localconfig.load(tmp_path / "absent.toml")
     assert localconfig.takeout_enabled(settings) is False
-    assert localconfig.sync_on_launch(settings) is False
+    assert localconfig.sync_on_launch(settings) is True
+    assert localconfig.watched_folders(settings) == []
     assert localconfig.account_emails(settings) == []
 
 
@@ -160,8 +163,7 @@ def test_config_roundtrips_through_save_and_load(tmp_path):
     path = tmp_path / "config.local.toml"
     settings = localconfig.load(path)
     settings["takeout"]["enabled"] = True
-    settings["takeout"]["sync_on_launch"] = True
-    settings["takeout"]["min_sync_interval_hours"] = 12
+    localconfig.set_sync_preferences(settings, on_launch=True, min_interval_hours=12)
     localconfig.add_account(settings, "a@example.com")
     localconfig.add_account(settings, "b@example.com")
     localconfig.save(settings, path)
@@ -205,10 +207,13 @@ def test_remove_account(tmp_path):
     assert localconfig.account_emails(settings) == ["b@example.com"]
 
 
-def test_sync_on_launch_requires_takeout_enabled(tmp_path):
+def test_sync_on_launch_is_independent_of_the_drive_route(tmp_path):
+    """It used to require takeout.enabled, which silently stopped local
+    Chrome from ever syncing on launch for anyone without Drive set up."""
     settings = localconfig.load(tmp_path / "absent.toml")
-    settings["takeout"]["sync_on_launch"] = True
     settings["takeout"]["enabled"] = False
+    assert localconfig.sync_on_launch(settings) is True
+    localconfig.set_sync_preferences(settings, on_launch=False)
     assert localconfig.sync_on_launch(settings) is False
 
 
@@ -351,14 +356,15 @@ def test_sync_reports_when_no_account_is_authorized(scratch, monkeypatch):
 
 
 def test_launch_gate_skips_when_configured_off(scratch):
+    settings = localconfig.set_sync_preferences(disabled_settings(), on_launch=False)
     report = sync.run(
         db_path=scratch / "app.db",
-        settings=disabled_settings(),
+        settings=settings,
         log_path=scratch / "visits.jsonl",
         on_launch=True,
     )
     assert report["skipped"] is True
-    assert "sync_on_launch" in report["reason"]
+    assert "on_launch" in report["reason"]
 
 
 def test_recent_sync_early_exits(scratch, monkeypatch):

@@ -158,6 +158,9 @@ def create_app(
                 "ok": state.get("ok"),
                 "errors": state.get("errors", []),
                 "reauthorize": state.get("reauthorize", []),
+                # Watched folders, per folder: status is ok | missing |
+                # unreadable | error, with zips found and per-file errors.
+                "folders": state.get("folders", []),
             },
             # Non-null while visit history from before the move to the
             # per-user data dir is still sitting, uncopied, in the repo.

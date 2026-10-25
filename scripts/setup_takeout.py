@@ -4,7 +4,9 @@
     python scripts/setup_takeout.py                  # interactive setup
     python scripts/setup_takeout.py --status         # show current config
     python scripts/setup_takeout.py --authorize EMAIL  # re-authorize one account
-    python scripts/setup_takeout.py --disable        # turn the integration off
+    python scripts/setup_takeout.py --disable        # turn the Drive route off
+    python scripts/setup_takeout.py --add-folder PATH [--label NAME]
+    python scripts/setup_takeout.py --remove-folder PATH
 
 Idempotent and re-runnable by design: it loads config.local.toml, changes
 only what you answer, and writes it back. Running it again to add a second
@@ -64,9 +66,18 @@ def show_status(settings: dict) -> None:
 
     print(f"Config file:      {config.LOCAL_CONFIG_PATH}"
           f"{'' if Path(config.LOCAL_CONFIG_PATH).exists() else '  (not created yet)'}")
-    print(f"Takeout enabled:  {bool(takeout.get('enabled'))}")
-    print(f"Sync on launch:   {bool(takeout.get('sync_on_launch'))}")
+    print(f"Sync on launch:   {localconfig.sync_on_launch(settings)}")
     print(f"Min interval:     {localconfig.min_sync_interval_hours(settings):g} hours")
+    folders = localconfig.watched_folders(settings)
+    if folders:
+        print("Watched folders:")
+        for entry in folders:
+            label = f"  [{entry['label']}]" if entry["label"] else ""
+            exists = "" if Path(entry["path"]).is_dir() else "  (NOT FOUND)"
+            print(f"  - {entry['path']}{label}{exists}")
+    else:
+        print("Watched folders:  none")
+    print(f"Drive (OAuth):    {'enabled' if takeout.get('enabled') else 'disabled'}")
     print(f"Client secret:    {secret if secret else 'NOT FOUND'}")
     print(f"Drive folder:     "
           f"{localconfig.drive_folder_id(settings) or 'search all of Drive'}")
@@ -131,8 +142,8 @@ def interactive(settings: dict) -> dict:
     settings.setdefault("takeout", {})["enabled"] = enabled
 
     if not enabled:
-        settings["takeout"]["sync_on_launch"] = False
         print("\nTakeout disabled. The local Chrome path is unaffected.")
+        ask_sync_preferences(settings)
         return settings
 
     if not drive.libraries_available():
@@ -164,23 +175,7 @@ def interactive(settings: dict) -> dict:
                     break
             prompt = "Authorize another Google account?"
 
-    print(
-        "\nCheck-on-launch sync makes ./run.sh look for a new Takeout archive\n"
-        "before starting the dashboard. It is a single cheap pass, it never\n"
-        "blocks startup, and it early-exits if it ran recently."
-    )
-    settings["takeout"]["sync_on_launch"] = ask_yes_no(
-        "Sync on launch?", default=settings["takeout"].get("sync_on_launch", True)
-    )
-    if settings["takeout"]["sync_on_launch"]:
-        print(
-            "\nTakeout only produces a new archive every ~2 months, so there\n"
-            "is nothing to gain from checking often."
-        )
-        settings["takeout"]["min_sync_interval_hours"] = ask_number(
-            "Minimum hours between syncs?",
-            localconfig.min_sync_interval_hours(settings),
-        )
+    ask_sync_preferences(settings)
 
     current_folder = localconfig.drive_folder_id(settings) or ""
     print(
@@ -195,6 +190,25 @@ def interactive(settings: dict) -> dict:
         settings["takeout"]["drive_folder_id"] = folder
 
     return settings
+
+
+def ask_sync_preferences(settings: dict) -> dict:
+    """Sync-on-launch covers every source, so it is asked either way."""
+    print(
+        "\nCheck-on-launch sync reads local Chrome, any watched folders, and\n"
+        "Drive (if enabled) when the app starts. It is a single cheap pass,\n"
+        "it never blocks startup, and it early-exits if it ran recently.\n"
+        "Chrome forgets history after about 90 days, so leaving it on is\n"
+        "what keeps the local history from expiring uncaptured."
+    )
+    on_launch = ask_yes_no("Sync on launch?", default=localconfig.sync_on_launch(settings))
+    interval = None
+    if on_launch:
+        interval = ask_number(
+            "Minimum hours between syncs?",
+            localconfig.min_sync_interval_hours(settings),
+        )
+    return localconfig.set_sync_preferences(settings, on_launch, interval)
 
 
 def choose_profiles(settings: dict) -> dict:
@@ -290,10 +304,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--authorize", metavar="EMAIL", default=None,
                         help="Re-run the OAuth flow for one account")
     parser.add_argument("--disable", action="store_true",
-                        help="Turn the integration off (keeps tokens and data)")
+                        help="Turn the Drive integration off (keeps tokens and data)")
+    parser.add_argument("--add-folder", metavar="PATH", default=None,
+                        help="Watch a folder for Takeout zips (no sign-in needed)")
+    parser.add_argument("--label", default="",
+                        help="Label for --add-folder, e.g. Personal or an email")
+    parser.add_argument("--remove-folder", metavar="PATH", default=None,
+                        help="Stop watching a folder (its zips are left alone)")
     args = parser.parse_args(argv)
 
     settings = localconfig.load()
+
+    if args.add_folder or args.remove_folder:
+        if args.add_folder:
+            if not Path(args.add_folder).expanduser().is_dir():
+                print(f"Not a folder: {args.add_folder}", file=sys.stderr)
+                return 1
+            localconfig.add_folder(settings, args.add_folder, args.label)
+        if args.remove_folder:
+            localconfig.remove_folder(settings, args.remove_folder)
+        path = localconfig.save(settings)
+        print(f"Wrote {path}")
+        show_status(settings)
+        return 0
 
     if args.status:
         show_status(settings)
@@ -301,9 +334,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.disable:
         settings.setdefault("takeout", {})["enabled"] = False
-        settings["takeout"]["sync_on_launch"] = False
         path = localconfig.save(settings)
-        print(f"Takeout integration disabled. Wrote {path}")
+        print(f"Drive integration disabled. Wrote {path}")
         print("Tokens and the visit log were left untouched.")
         return 0
 

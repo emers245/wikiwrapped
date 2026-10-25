@@ -187,8 +187,8 @@ Takeout export. `GET /health` reports the per-source breakdown.
 
 ## Google Takeout integration
 
-Optional, and off until you enable it. Everything below is additive: with it
-disabled, the local Chrome path works exactly as before.
+Optional. Everything below is additive: with no Takeout source set up, the
+local Chrome path works exactly as before.
 
 Local Chrome history has two hard limits. It expires after about 90 days,
 and it only covers one account on one device. Google Takeout exports Chrome
@@ -196,12 +196,57 @@ history at the **account** level, which Chrome Sync has already merged
 across your devices, so it reaches further back and includes a second Google
 account and mobile browsing.
 
-Access is **read-only** and password-free. The single OAuth scope is
+There are two independent ways to get Takeout archives in. Either, both, or
+neither can be used.
+
+### Watched folders (the default; no Google sign-in)
+
+Point the app at one or more folders. Each sync scans them, up to 4 levels
+deep, for zips named `takeout*.zip` and ingests any it has not seen. The
+zips get there either by hand (download them from Takeout into the folder)
+or through **Google Drive for desktop**, which mirrors the Drive folder that
+a scheduled Takeout export delivers into. No Cloud project, OAuth client, or
+token is involved.
+
+```bash
+python scripts/setup_takeout.py --add-folder "/path/to/Takeout" --label Personal
+python scripts/setup_takeout.py --remove-folder "/path/to/Takeout"
+```
+
+```toml
+[[watched_folders]]
+path = "/Users/you/Library/CloudStorage/GoogleDrive-you@example.com/My Drive/Takeout"
+label = "Personal"
+```
+
+- **Read in place, never changed.** Only the archive's Chrome history member
+  is read; the zip is never modified, moved, copied, or deleted, and only
+  the Wikipedia subset is kept.
+- **The label stands in for the account.** A zip on disk does not say whose
+  it is, so visits are logged as source `takeout` with the folder's label
+  (or no account if it has none) as the account.
+- **Idempotent by path + size + mtime.** Recorded in `processed_archives` as
+  `file:<resolved path>` / `<mtime>|size=<bytes>`. `stat()` never downloads
+  a Drive online-only file, where a content hash would, on every sync. A
+  re-downloaded or copied archive is read once more, and dedup (the log's
+  exact key, then the database's `UNIQUE (page_id, timestamp)`) keeps that
+  from adding visits: the same archive via Drive and a folder, or in two
+  folders, is one visit with two provenance rows.
+- **Failures never block startup.** A missing or unreadable folder, a corrupt
+  zip, or an online-only Drive file that cannot be fetched (offline) is
+  recorded per folder in the sync report, `sync_state.json`, and
+  `GET /health` under `sync.folders`. A failed zip is not marked processed,
+  so it is retried next sync. Making the Takeout folder **available offline**
+  in Drive for desktop avoids the online-only case entirely.
+
+### Google Drive via your own OAuth client (Advanced)
+
+Off until you enable it. Access is **read-only** and password-free. The single OAuth scope is
 `drive.readonly`; the app never asks for, receives, stores, or transmits a
 Google password, and it never deletes, moves, or modifies anything in your
 Drive. Deciding how long to keep archives is yours to make by hand.
 
-### 1. Create the OAuth client (manual, in Google Cloud Console)
+#### 1. Create the OAuth client (manual, in Google Cloud Console)
 
 You have to do this part yourself; it cannot be scripted.
 
@@ -235,7 +280,7 @@ skipping. When it happens, run:
 python scripts/setup_takeout.py --authorize you@example.com
 ```
 
-### 2. Schedule Takeout to deliver to Drive
+#### 2. Schedule Takeout to deliver to Drive
 
 1. Go to <https://takeout.google.com/>.
 2. **Deselect all**, then select **Chrome** only. Use *All Chrome data
@@ -248,7 +293,7 @@ Delivering to Drive rather than email matters: **emailed Takeout links
 expire after 7 days**, while files in Drive persist until you remove them.
 `.tgz` archives are listed but skipped, because the extractor reads `.zip`.
 
-### 3. Run setup
+#### 3. Run setup
 
 ```bash
 python scripts/setup_takeout.py
@@ -279,9 +324,22 @@ python scripts/setup_takeout.py --disable             # turn it off, keep data
 
 ### Check-on-launch syncing
 
-`./run.sh` runs one sync pass before starting the server: it checks Drive
-for archives it has not processed, ingests any it finds, re-reads local
-Chrome, appends everything to the log, and updates the database.
+`./run.sh` runs one sync pass before starting the server: it re-reads local
+Chrome, scans the watched folders, checks Drive (if enabled) for archives it
+has not processed, appends everything to the log, and updates the database.
+
+Sync preferences cover every source, so they live in their own table:
+
+```toml
+[sync]
+on_launch = true          # default; local Chrome is only captured by a sync
+min_interval_hours = 24
+```
+
+They used to be `takeout.sync_on_launch` / `takeout.min_sync_interval_hours`,
+and launch sync only ran when Takeout was enabled, which meant local Chrome
+was never captured on launch without it. Old files are migrated when loaded
+(the legacy on-launch flag is honored only where Takeout was enabled).
 
 It is a single pass, not a daemon or a scheduler, and it runs as its own
 process so a failure cannot take the dashboard down. If Drive is
@@ -290,14 +348,15 @@ warning, records the problem in `data/sync_state.json` where `GET /health`
 exposes it, and **serves the dashboard with existing data anyway**.
 
 Takeout only produces a new archive every ~2 months, so the pass early-exits
-if one ran within `min_sync_interval_hours` (default 24).
+if one ran within `min_interval_hours` (default 24).
 
 ```bash
 ./run.sh --no-sync       # launch without syncing
 ./run.sh --force-sync    # sync even if one ran recently
 
 python -m app.sync --force      # sync now
-python -m app.sync --no-drive   # local Chrome only
+python -m app.sync --no-drive   # skip the Drive (OAuth) route
+python -m app.sync --no-folders # skip watched folders
 python -m app.sync --rebuild    # re-ingest the whole log into the database
 
 # One-off migration: fold history captured before the log existed into it
@@ -540,6 +599,7 @@ app/
   visitlog.py                # append-only JSONL log: the source of truth
   migrate.py                 # opt-in copy of repo-local data to the user-data dir
   sync.py                    # check-on-launch pass over every input source
+  folders.py                 # watched folders: find Takeout zips on disk
   drive.py                   # read-only Google Drive client (lazy imports)
   dedup.py                   # collapse one visit seen by two sources
   localconfig.py             # config.local.toml read/write

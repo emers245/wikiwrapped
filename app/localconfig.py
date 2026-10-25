@@ -16,16 +16,28 @@ instead of being silently dropped.
 
 Shape:
 
-    [takeout]
+    [sync]
+    on_launch = true             # one pass over every source at launch
+    min_interval_hours = 24
+
+    [[watched_folders]]          # Takeout zips on this computer (no sign-in)
+    path = "/Users/you/Google Drive/Takeout"
+    label = "Personal"
+
+    [takeout]                    # Advanced: Drive via your own OAuth client
     enabled = true
-    sync_on_launch = true
-    min_sync_interval_hours = 24
 
     [[takeout.accounts]]
     email = "you@example.com"
 
-Nothing here is required. With the file absent, load() returns defaults with
-Takeout disabled and the local-Chrome path works exactly as before.
+Nothing here is required. With the file absent, load() returns defaults:
+sync on launch, no watched folders, the Drive integration off, and the
+local-Chrome path reading every profile.
+
+The three input sources are independent. Local Chrome is always read;
+watched folders are read whenever any are configured; the Drive path runs
+only when takeout.enabled is true. Either Takeout route, both, or neither
+can be in use.
 """
 
 from __future__ import annotations
@@ -36,12 +48,21 @@ from pathlib import Path
 
 import config
 
-# Takeout is opt-in: an untouched install must behave like it did before.
 DEFAULTS: dict = {
+    # Sync preferences cover every source, so they live in their own table
+    # rather than under [takeout], where they used to be. On by default:
+    # Chrome expires local history after about 90 days, and a launch is the
+    # only moment the app gets to capture it (D9, D12).
+    "sync": {
+        "on_launch": True,
+        "min_interval_hours": config.MIN_SYNC_INTERVAL_HOURS,
+    },
+    # Folders scanned for Takeout zips, as [{path, label}]. The label stands
+    # in for the account, because a zip on disk does not say whose it is.
+    "watched_folders": [],
+    # The Drive/OAuth route is opt-in and stays off unless set up.
     "takeout": {
         "enabled": False,
-        "sync_on_launch": False,
-        "min_sync_interval_hours": config.MIN_SYNC_INTERVAL_HOURS,
         # Empty means "discover it": the client secret by glob in the
         # user-data dir, the archives by name anywhere in Drive.
         "client_secret": "",
@@ -74,7 +95,45 @@ def load(path: str | Path | None = None) -> dict:
         return merged
     with open(path, "rb") as handle:
         loaded = tomllib.load(handle)
+    _migrate_legacy_sync_keys(loaded)
     return _deep_merge(merged, loaded)
+
+
+# Where the sync preferences lived before they got their own table.
+_LEGACY_SYNC_KEYS = {
+    "sync_on_launch": "on_launch",
+    "min_sync_interval_hours": "min_interval_hours",
+}
+
+
+def _migrate_legacy_sync_keys(loaded: dict) -> None:
+    """Move takeout.sync_on_launch / min_sync_interval_hours into [sync].
+
+    In memory only; the file changes the next time settings are saved, at
+    which point the old keys are gone and [sync] is the single source of
+    truth. An explicit [sync] value always wins over a legacy one.
+
+    The legacy on-launch flag is carried over only when the Drive route was
+    enabled. It used to gate the whole launch sync on Takeout being on, and
+    disabling Takeout also switched it off, so a false there usually meant
+    "Takeout is off", not "do not capture local Chrome history". Treating it
+    as the latter would keep the 90-day local history from ever syncing.
+    """
+    takeout = loaded.get("takeout")
+    if not isinstance(takeout, dict):
+        return
+    target = loaded.setdefault("sync", {})
+    if not isinstance(target, dict):
+        return
+    for old, new in _LEGACY_SYNC_KEYS.items():
+        if old not in takeout:
+            continue
+        value = takeout.pop(old)
+        if new in target:
+            continue
+        if old == "sync_on_launch" and not takeout.get("enabled"):
+            continue
+        target[new] = value
 
 
 def save(settings: dict, path: str | Path | None = None) -> Path:
@@ -82,8 +141,8 @@ def save(settings: dict, path: str | Path | None = None) -> Path:
     path = Path(path or config.LOCAL_CONFIG_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        "# Local settings for wikipedia-wrapped (git-ignored).\n"
-        "# Written by scripts/setup_takeout.py; safe to edit by hand.\n\n"
+        "# Local settings for Wikipedia Wrapped (per-user, never in git).\n"
+        "# Written by the app's setup; safe to edit by hand.\n\n"
     )
     path.write_text(header + _emit(settings), encoding="utf-8")
     return path
@@ -98,19 +157,98 @@ def takeout_enabled(settings: dict) -> bool:
 
 
 def sync_on_launch(settings: dict) -> bool:
-    """Both flags must be on; enabling Takeout does not imply auto-sync."""
-    takeout = settings.get("takeout", {})
-    return bool(takeout.get("enabled")) and bool(takeout.get("sync_on_launch"))
+    """Whether launching the app runs a sync pass over every source.
+
+    Independent of which sources are enabled: local Chrome is always a
+    source, and it is the one whose history expires.
+    """
+    return bool(settings.get("sync", {}).get("on_launch", True))
 
 
 def min_sync_interval_hours(settings: dict) -> float:
-    value = settings.get("takeout", {}).get(
-        "min_sync_interval_hours", config.MIN_SYNC_INTERVAL_HOURS
+    value = settings.get("sync", {}).get(
+        "min_interval_hours", config.MIN_SYNC_INTERVAL_HOURS
     )
     try:
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return float(config.MIN_SYNC_INTERVAL_HOURS)
+
+
+def set_sync_preferences(
+    settings: dict, on_launch: bool, min_interval_hours: float | None = None
+) -> dict:
+    sync = settings.setdefault("sync", {})
+    sync["on_launch"] = bool(on_launch)
+    if min_interval_hours is not None:
+        sync["min_interval_hours"] = max(0.0, float(min_interval_hours))
+    return settings
+
+
+# ---------------------------------------------------------------------------
+# Watched folders: Takeout zips on this computer
+# ---------------------------------------------------------------------------
+
+def folder_key(path: str | Path) -> str:
+    """Canonical form of a folder path, so one folder is never listed twice.
+
+    resolve() follows symlinks and normalizes "..", and does not require the
+    folder to exist (a disconnected drive must still dedupe correctly).
+    """
+    return str(Path(path).expanduser().resolve())
+
+
+def watched_folders(settings: dict) -> list[dict]:
+    """Configured folders as [{path, label}], deduped, in config order.
+
+    Tolerates a hand-edited bare string in place of a {path, label} table.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for entry in settings.get("watched_folders", []) or []:
+        if isinstance(entry, str):
+            entry = {"path": entry}
+        if not isinstance(entry, dict):
+            continue
+        raw = str(entry.get("path") or "").strip()
+        if not raw:
+            continue
+        key = folder_key(raw)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"path": key, "label": str(entry.get("label") or "").strip()})
+    return out
+
+
+def add_folder(settings: dict, path: str | Path, label: str = "") -> dict:
+    """Add a watched folder, or update the label of one already listed."""
+    raw = str(path).strip()
+    if not raw:
+        raise ValueError("Folder path must not be empty.")
+    key = folder_key(raw)
+    label = (label or "").strip()
+    folders = settings.setdefault("watched_folders", [])
+    for entry in folders:
+        if isinstance(entry, dict) and folder_key(entry.get("path") or "") == key:
+            entry["path"] = key
+            entry["label"] = label
+            return settings
+    folders.append({"path": key, "label": label})
+    return settings
+
+
+def remove_folder(settings: dict, path: str | Path) -> dict:
+    key = folder_key(path)
+    settings["watched_folders"] = [
+        entry
+        for entry in settings.get("watched_folders", []) or []
+        if not (
+            (isinstance(entry, dict) and folder_key(entry.get("path") or "") == key)
+            or (isinstance(entry, str) and folder_key(entry) == key)
+        )
+    ]
+    return settings
 
 
 def account_emails(settings: dict) -> list[str]:
