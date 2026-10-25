@@ -143,7 +143,14 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     path = config.DB_PATH if db_path is None else db_path
     if str(path) != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_S)
+    # check_same_thread=False: FastAPI opens a request's connection in one
+    # thread-pool thread and may run the dependency's teardown (close) in
+    # another, which sqlite3's default thread check turns into a 500 as soon
+    # as the page makes several requests at once. Safe here because every
+    # connection belongs to exactly one request or one script and is never
+    # used from two threads at the same time.
+    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_S,
+                           check_same_thread=False)
     conn.row_factory = sqlite3.Row
     if str(path) != ":memory:":
         conn.execute("PRAGMA journal_mode = WAL")

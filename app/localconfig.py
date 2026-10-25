@@ -34,7 +34,8 @@ Nothing here is required. With the file absent, load() returns defaults:
 sync on launch, no watched folders, the Drive integration off, and the
 local-Chrome path reading every profile.
 
-The three input sources are independent. Local Chrome is always read;
+The three input sources are independent. Local Chrome is read unless
+local.enabled is false;
 watched folders are read whenever any are configured; the Drive path runs
 only when takeout.enabled is true. Either Takeout route, both, or neither
 can be in use.
@@ -70,6 +71,10 @@ DEFAULTS: dict = {
         "accounts": [],
     },
     "local": {
+        # Off only when someone unticks every profile in setup: an empty
+        # chrome_profiles list already means "all of them", so "none" needs
+        # its own switch rather than an empty list.
+        "enabled": True,
         # Which Chrome profiles to read. Empty means every profile found,
         # because the signed-in profile is often not "Default" and picking
         # one by default would silently capture nothing. Entries match the
@@ -77,6 +82,11 @@ DEFAULTS: dict = {
         "chrome_profiles": [],
     },
 }
+
+
+def local_enabled(settings: dict) -> bool:
+    """Whether the local Chrome history is read at all."""
+    return bool(settings.get("local", {}).get("enabled", True))
 
 
 def chrome_profiles(settings: dict) -> list[str]:

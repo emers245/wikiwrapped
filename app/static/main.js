@@ -331,7 +331,9 @@ window.WW = (function () {
   const jobFill = document.getElementById("job-bar-fill");
   const jobCount = document.getElementById("job-count");
   const jobReload = document.getElementById("job-reload");
+  const jobSettings = document.getElementById("job-settings");
   const jobDismiss = document.getElementById("job-dismiss");
+  let pollTimer = null;
   const REPORTED_KEY = "ww.reportedJob";
   let lastJobId = null;      // the job last seen running
   /* The job whose result was already shown. Kept in sessionStorage so the
@@ -355,10 +357,15 @@ window.WW = (function () {
 
   jobReload.addEventListener("click", () => location.reload());
   jobDismiss.addEventListener("click", () => strip.classList.add("hidden"));
+  jobSettings.addEventListener("click", () => {
+    strip.classList.add("hidden");
+    if (window.WWsetup) WWsetup.open("settings");
+  });
 
   function showRunning(job) {
     strip.classList.remove("hidden", "problem");
     jobReload.classList.add("hidden");
+    jobSettings.classList.add("hidden");
     jobDismiss.classList.add("hidden");
     const step = job.steps > 1 ? ` (step ${job.step_index} of ${job.steps})` : "";
     jobMessage.textContent = (job.message || job.step || "Working") + step;
@@ -381,6 +388,20 @@ window.WW = (function () {
       (gaps.coords_missing ?? loaded.noCoords) < loaded.noCoords;
   }
 
+  /* Problems in the user's terms. The sync's own messages are written for
+     a terminal ("Run: python scripts/setup_takeout.py --authorize ..."),
+     so an account that needs signing in again is described here instead,
+     and the raw duplicate is dropped. */
+  function describeProblems(job, health) {
+    const sync = (health && health.sync) || { errors: [], reauthorize: [] };
+    const out = sync.reauthorize.map(email =>
+      `Google account ${email} needs you to sign in again (Settings)`);
+    for (const message of [...job.errors, ...sync.errors]) {
+      if (!message.startsWith("Re-authorization needed")) out.push(message);
+    }
+    return out;
+  }
+
   async function showFinished(job) {
     await booted;            // the comparison needs the loaded dashboard
     let health = null;
@@ -389,7 +410,7 @@ window.WW = (function () {
     } catch (err) {
       /* the strip still reports the job; there is just nothing to compare */
     }
-    const problems = [...job.errors, ...((health && health.sync.errors) || [])];
+    const problems = describeProblems(job, health);
     const changed = health !== null && dataChanged(health);
 
     if (changed && state.loaded && state.loaded.empty) {
@@ -409,6 +430,7 @@ window.WW = (function () {
       jobMessage.title = "";
     }
     jobReload.classList.toggle("hidden", !changed);
+    jobSettings.classList.toggle("hidden", !problems.length);
     jobDismiss.classList.remove("hidden");
     strip.classList.remove("hidden");
     if (!changed && !problems.length) {
@@ -421,13 +443,13 @@ window.WW = (function () {
     try {
       job = await (await fetch("/jobs")).json();
     } catch (err) {
-      setTimeout(pollJobs, POLL_IDLE_MS);   // server busy or restarting
+      schedulePoll(POLL_IDLE_MS);   // server busy or restarting
       return;
     }
     if (job.status === "running") {
       lastJobId = job.id;
       showRunning(job);
-      setTimeout(pollJobs, POLL_RUNNING_MS);
+      schedulePoll(POLL_RUNNING_MS);
       return;
     }
     /* Report a job once, and only one this page saw running, or one that
@@ -442,7 +464,19 @@ window.WW = (function () {
       showFinished(job);
     }
     lastJobId = job.id;
-    setTimeout(pollJobs, POLL_IDLE_MS);
+    schedulePoll(POLL_IDLE_MS);
+  }
+
+  /* One timer, so pollJobsNow() (called when setup starts a sync) cannot
+     leave two polling loops running side by side. */
+  function schedulePoll(delay) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollJobs, delay);
+  }
+
+  function pollJobsNow() {
+    clearTimeout(pollTimer);
+    pollJobs();
   }
 
   /* -- boot ---------------------------------------------------------------- */
@@ -491,9 +525,10 @@ window.WW = (function () {
     };
 
     const s = data.summary;
-    document.getElementById("summary-line").textContent =
-      `${s.unique_pages} pages | ${s.total_visits} visits | ` +
-      `${(s.first_visit || "").slice(0, 10)} to ${(s.last_visit || "").slice(0, 10)}`;
+    document.getElementById("summary-line").textContent = s.total_visits
+      ? `${s.unique_pages} pages | ${s.total_visits} visits | ` +
+        `${(s.first_visit || "").slice(0, 10)} to ${(s.last_visit || "").slice(0, 10)}`
+      : "No history yet";
 
     /* Enrichment is a separate pass from ingestion, so a fresh import can
        leave most of the history with no topic and no coordinates - which
@@ -519,7 +554,7 @@ window.WW = (function () {
       document.getElementById("viz-message").textContent =
         "No reading history yet. It is read from Chrome (and any Takeout " +
         "folders) when the app syncs; the dashboard fills in when a sync " +
-        "finishes.";
+        "finishes. Sources and syncing are in Settings.";
       document.getElementById("viz-message").classList.remove("hidden");
       btnUmap.disabled = btnNet.disabled = true;
       finishLaunch();
@@ -571,5 +606,6 @@ window.WW = (function () {
 
   return { state, colorFor, hexToRgba, pageUrl, esc, topicLabel, GREY,
            showPopup, scheduleHidePopup, highlight,
-           filters, setFilter, pageGreyed, pageVisible, topicGreyed };
+           filters, setFilter, pageGreyed, pageVisible, topicGreyed,
+           pollJobsNow };
 })();

@@ -44,3 +44,40 @@ def test_in_memory_databases_still_work(tmp_path):
         assert storage.count_pages(conn) == 0
     finally:
         conn.close()
+
+
+def test_a_connection_can_be_closed_from_another_thread(tmp_path):
+    """FastAPI runs a request's get_db setup and teardown on thread-pool
+    threads that may differ; closing must not raise there. (The page loads
+    /dashboard, /jobs and /settings at once, which made this a real 500.)"""
+    import threading
+
+    conn = storage.connect(tmp_path / "app.db")
+    errors = []
+
+    def close_elsewhere():
+        try:
+            conn.close()
+        except Exception as exc:          # pragma: no cover - the bug
+            errors.append(exc)
+
+    worker = threading.Thread(target=close_elsewhere)
+    worker.start()
+    worker.join()
+    assert errors == []
+
+
+def test_concurrent_dashboard_requests_all_succeed(tmp_path):
+    """The page's own load pattern: several requests in parallel."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+
+    from app import api
+
+    app = api.create_app(db_path=tmp_path / "app.db", reference_dir=tmp_path / "none")
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        paths = ["/dashboard", "/health", "/jobs", "/stats/summary"] * 8
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            codes = list(pool.map(lambda p: client.get(p).status_code, paths))
+    assert set(codes) == {200}

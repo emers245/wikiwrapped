@@ -19,6 +19,10 @@ import pytest
 from app import folders, localconfig, storage, sync, visitlog
 from extract import extract_history
 
+# The API only answers to loopback names (app.api local_only), like the
+# real window; TestClient's default host, "testserver", would be refused.
+LOCAL = "http://127.0.0.1"
+
 CAT = "https://en.wikipedia.org/wiki/Cat"
 DOG = "https://en.wikipedia.org/wiki/Dog"
 # Microseconds since 1601 (the extractor accepts either epoch).
@@ -466,7 +470,7 @@ def test_folder_status_reaches_sync_state_and_health(env):
     assert [f["status"] for f in state["folders"]] == ["ok", "missing"]
 
     app = api.create_app(db_path=env.db, reference_dir=env.root / "no_reference")
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         folders_health = client.get("/health").json()["sync"]["folders"]
     assert folders_health[0]["label"] == "Personal"
     assert folders_health[0]["zips_found"] == 1

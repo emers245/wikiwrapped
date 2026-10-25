@@ -144,12 +144,20 @@ def load_credentials(email: str, settings: dict | None = None):
     return creds
 
 
-def authorize_account(settings: dict, email_hint: str | None = None) -> str:
+def authorize_account(
+    settings: dict,
+    email_hint: str | None = None,
+    timeout_seconds: float | None = None,
+) -> str:
     """Run the interactive installed-app OAuth flow; returns the account email.
 
     Opens a local-server callback (the Desktop app client type). The email is
     read back from Drive rather than trusted from user input, so the token
     filename always matches the account that actually authorized.
+
+    timeout_seconds bounds the wait for the browser to come back. The app
+    window calls this from a request handler, and a sign-in the user
+    abandons must not hold that request (and a server thread) forever.
     """
     google = _google_modules()
     secret = localconfig.client_secret_path(settings)
@@ -166,19 +174,32 @@ def authorize_account(settings: dict, email_hint: str | None = None) -> str:
         str(secret), config.DRIVE_SCOPES
     )
     # port=0 lets the OS pick a free port for the loopback redirect.
-    creds = flow.run_local_server(
-        port=0,
-        prompt="consent",          # force a refresh token to be issued
-        access_type="offline",
-        authorization_prompt_message=(
-            "Opening a browser to authorize read-only Drive access"
-            + (f" for {email_hint}" if email_hint else "")
-            + ".\nIf it does not open, visit:\n    {url}"
-        ),
-        success_message=(
-            "Authorized. You can close this tab and return to the terminal."
-        ),
-    )
+    try:
+        creds = flow.run_local_server(
+            port=0,
+            prompt="consent",          # force a refresh token to be issued
+            access_type="offline",
+            timeout_seconds=timeout_seconds,
+            authorization_prompt_message=(
+                "Opening a browser to authorize read-only Drive access"
+                + (f" for {email_hint}" if email_hint else "")
+                + ".\nIf it does not open, visit:\n    {url}"
+            ),
+            success_message=(
+                "Authorized. You can close this tab and return to "
+                "Wikipedia Wrapped."
+            ),
+        )
+    except Exception as exc:
+        # A timeout surfaces from the library as an AttributeError on the
+        # missing redirect, a refusal as an OAuth error; to the user both
+        # mean the same thing.
+        raise DriveError(
+            "Authorization was not completed in the browser"
+            + (f" (no response within {timeout_seconds:.0f} seconds)"
+               if timeout_seconds else "")
+            + f". Details: {exc}"
+        ) from exc
 
     email = _account_email(creds) or (email_hint or "").strip()
     if not email:

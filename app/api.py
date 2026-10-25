@@ -15,6 +15,16 @@ Endpoints:
 - GET  /pages/{title}         per-page detail (Phase 2 mouseover payload)
 - GET  /jobs                  background job progress (sync + enrichment)
 - POST /jobs/sync             start a sync + enrichment job now
+- GET  /settings              first-run flag + everything Settings shows
+- PUT  /settings              save the Settings screen / first-run answers
+- GET  /settings/chrome-profiles      detected profiles with visit counts
+- POST /settings/folders/inspect      check a folder before adding it
+- POST /settings/client-secret        import an OAuth client secret (Advanced)
+- POST /settings/accounts/authorize   browser sign-in for one account
+- DELETE /settings/accounts/{email}   forget an account and its token
+
+Every request must be addressed to the loopback host, and state-changing
+requests from another site's page are refused; see local_only below.
 
 Run:  python -m app.launcher   (the app window; see app/launcher.py)
  or:  uvicorn app.api:app --reload   (API only, for development)
@@ -30,27 +40,66 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
-from app import (embeddings, ingest, jobs, migrate, network, pageviews, stats,
-                 storage, sync, topics, umap_space)
+from app import (embeddings, ingest, jobs, localconfig, migrate, network,
+                 pageviews, setup_service, stats, storage, sync, topics,
+                 umap_space)
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# The only names this server answers to. It listens on 127.0.0.1 only, but
+# that alone does not stop a web page from reaching it: see local_only.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _hostname(host_header: str) -> str:
+    """'127.0.0.1:48213' -> '127.0.0.1' (the Host header carries the port)."""
+    return host_header.rsplit(":", 1)[0] if ":" in host_header else host_header
 
 
 def create_app(
     db_path: str | Path | None = None,
     reference_dir: str | Path | None = None,
     job_runner: jobs.JobRunner | None = None,
+    allowed_hosts: tuple[str, ...] = LOOPBACK_HOSTS,
 ) -> FastAPI:
     app = FastAPI(title="Wikipedia Wrapped", version=config.APP_VERSION)
     db_path = db_path or config.DB_PATH
     reference_dir = reference_dir or config.REFERENCE_DIR
     runner = job_runner or jobs.JobRunner()
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next):
+        """Refuse requests that a web page could make on someone's behalf.
+
+        Any page open in the user's browser can send requests to
+        127.0.0.1, and some of these endpoints read browsing history or
+        accept file paths. Two checks close that off:
+
+        - Host must be a loopback name. A malicious site can point its own
+          DNS name at 127.0.0.1 ("DNS rebinding") to read responses as if
+          same-origin; its requests then still carry ITS name in Host.
+        - A state-changing request whose Origin is not this server's own
+          is refused. Browsers attach Origin to cross-site POSTs, including
+          the plain form posts that need no CORS preflight. Requests with
+          no Origin at all (curl, the app's own tools) are allowed.
+        """
+        host = request.headers.get("host", "")
+        if _hostname(host) not in allowed_hosts:
+            return PlainTextResponse("Forbidden: unexpected Host header.", 403)
+        origin = request.headers.get("origin")
+        if (request.method not in SAFE_METHODS and origin is not None
+                and urlsplit(origin).netloc != host):
+            return PlainTextResponse("Forbidden: cross-site request.", 403)
+        return await call_next(request)
 
     def get_db():
         conn = storage.connect(db_path)
@@ -225,6 +274,76 @@ def create_app(
         if not runner.start("sync", jobs.sync_steps(force=True, enrich=enrich)):
             raise HTTPException(409, "A sync is already running.")
         return runner.snapshot()
+
+    # -- setup and Settings (all rules live in app/setup_service.py) --------
+
+    def bad_request(exc: setup_service.SetupError):
+        return HTTPException(400, str(exc))
+
+    @app.get("/settings")
+    def get_settings():
+        return setup_service.status(localconfig.load())
+
+    @app.get("/settings/chrome-profiles")
+    def get_chrome_profiles():
+        """Separate from /settings: counting visits reads every History DB."""
+        return setup_service.chrome_profiles(localconfig.load())
+
+    @app.put("/settings")
+    def put_settings(changes: dict = Body(...)):
+        """Save the Settings screen (or the first-run answers) in one go.
+
+        Validated in full before anything is written, so a rejected change
+        leaves the file exactly as it was. Writing the file is also what
+        ends "first run".
+        """
+        settings = localconfig.load()
+        try:
+            setup_service.apply(settings, changes)
+        except setup_service.SetupError as exc:
+            raise bad_request(exc)
+        localconfig.save(settings)
+        return setup_service.status(settings)
+
+    @app.post("/settings/folders/inspect")
+    def inspect_folder(body: dict = Body(...)):
+        return setup_service.inspect_folder(body.get("path"))
+
+    @app.post("/settings/client-secret")
+    def import_client_secret(body: dict = Body(...)):
+        settings = localconfig.load()
+        try:
+            setup_service.import_client_secret(settings, body.get("path"))
+        except setup_service.SetupError as exc:
+            raise bad_request(exc)
+        localconfig.save(settings)
+        return setup_service.status(settings, inspect_folders=False)["takeout"]
+
+    @app.post("/settings/accounts/authorize")
+    def authorize_account(body: dict = Body(default={})):
+        """Sign an account in through the system browser.
+
+        Blocks (in FastAPI's thread pool, not the event loop) until the
+        browser comes back or AUTHORIZE_TIMEOUT_S passes. The result is
+        applied to settings loaded AFTER the wait, so anything saved while
+        the user was signing in is not overwritten.
+        """
+        try:
+            email = setup_service.authorize(
+                localconfig.load(), email_hint=(body or {}).get("email_hint")
+            )
+        except setup_service.SetupError as exc:
+            raise bad_request(exc)
+        settings = setup_service.record_authorized(localconfig.load(), email)
+        localconfig.save(settings)
+        return {"email": email,
+                "takeout": setup_service.status(settings, inspect_folders=False)["takeout"]}
+
+    @app.delete("/settings/accounts/{email}")
+    def remove_account(email: str):
+        settings = setup_service.remove_account(localconfig.load(), email)
+        localconfig.save(settings)
+        return setup_service.status(settings, inspect_folders=False)["takeout"]
 
     # -- stats (S7.3) ------------------------------------------------------
 

@@ -24,6 +24,7 @@
           aria-controls="panels" title="Hide summary panels">Panels</button>
   <div id="summary-line">loading...</div>
   <div id="data-warning" class="hidden"></div>
+  <button id="btn-settings" class="header-btn" title="Sources, sync, and accounts">Settings</button>
 </header>
 
 <aside id="panels">
@@ -65,13 +66,35 @@
     <span id="job-bar" class="hidden"><span id="job-bar-fill"></span></span>
     <span id="job-count"></span>
     <button id="job-reload" class="hidden">Reload</button>
+    <button id="job-settings" class="hidden">Settings</button>
     <button id="job-dismiss" class="hidden" title="Dismiss">Close</button>
   </div>
 </main>
+
+<!-- First-run setup and Settings (setup.js). One overlay, two modes: a
+     stepped wizard on first run, a single page from the Settings button. -->
+<div id="setup" class="hidden" role="dialog" aria-modal="true"
+     aria-labelledby="setup-title">
+  <div id="setup-card">
+    <div id="setup-head">
+      <h2 id="setup-title"></h2>
+      <span id="setup-step"></span>
+    </div>
+    <div id="setup-body"></div>
+    <div id="setup-error" class="hidden" role="alert"></div>
+    <div id="setup-foot">
+      <button id="setup-back">Back</button>
+      <span class="setup-spacer"></span>
+      <button id="setup-cancel">Cancel</button>
+      <button id="setup-next" class="primary">Next</button>
+    </div>
+  </div>
+</div>
 
 <script src="/static/panels.js"></script>
 <script src="/static/map.js"></script>
 <script src="/static/network.js"></script>
 <script src="/static/main.js"></script>
+<script src="/static/setup.js"></script>
 </body>
 </html>

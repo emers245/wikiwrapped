@@ -101,16 +101,21 @@ reading only that one silently captures nothing: on a typical machine the
 browsing lives in `Profile 1` or `Profile 2`. Each visit is attributed to
 that profile's signed-in account, read from Chrome's `Local State`.
 
-`scripts/setup_takeout.py` lists your profiles with their display names,
-accounts, and Wikipedia visit counts, and lets you narrow the selection if
-you want only some of them. The choice is stored as directory names, which
-are stable when a profile is renamed:
+The app's setup screens and Settings (or `scripts/setup_takeout.py`) list
+your profiles with their display names, accounts, and Wikipedia visit
+counts, and let you narrow the selection if you want only some of them. The
+choice is stored as directory names, which are stable when a profile is
+renamed:
 
 ```toml
 [local]
+enabled = true                            # false = read no local profile
 chrome_profiles = []                      # empty = all profiles
 # chrome_profiles = ["Profile 1"]         # or name the ones you want
 ```
+
+`enabled` exists because an empty list already means "all": unticking every
+profile in setup turns the local source off rather than storing `[]`.
 
 Entries match either the directory name (`Profile 1`) or the display name
 (`Work`), case-insensitively. If nothing matches, the sync says so and lists
@@ -296,6 +301,16 @@ expire after 7 days**, while files in Drive persist until you remove them.
 
 #### 3. Run setup
 
+In the app: **Settings > Advanced: Google Drive sign-in**. Choose the client
+secret JSON with the file picker (it is checked, then copied into the
+user-data directory with owner-only permissions), then **Add a Google
+account**, which opens your browser for the sign-in and waits up to five
+minutes for it. Accounts that need signing in again are marked there, with a
+**Sign in again** button; **Remove** forgets an account and deletes its
+token.
+
+From a terminal, the same thing:
+
 ```bash
 python scripts/setup_takeout.py
 ```
@@ -445,6 +460,31 @@ the plausibility bounds, and drops every row: it turned 2804 real Wikipedia
 visits into zero with no error message. `usec_to_unix` now decodes both
 readings and keeps whichever is a plausible date, and the sync warns loudly
 whenever any row is dropped for a bad timestamp.
+
+## First-run setup and Settings
+
+With no settings file in the user-data directory, the window opens on a
+short setup flow instead of syncing straight away: what the app does and
+what leaves the computer, which Chrome profiles to read, watched Takeout
+folders (native folder picker; the zip count is shown as soon as a folder is
+picked), the Advanced Drive option (collapsed), and sync preferences.
+**Save and start** writes the settings and starts the first sync, whose
+progress shows in the window. The same sections, on one page, are behind
+the **Settings** button in the header, along with the last sync's problems
+and where the data and logs are.
+
+All the rules live in `app/setup_service.py`, which both the window (via
+`GET/PUT /settings` and friends) and `scripts/setup_takeout.py` call, so the
+two can never disagree. Every change is validated on the server: a new
+folder must exist and be readable, a client secret must parse as a Desktop
+app OAuth client. A folder that is already configured may be temporarily
+unreachable (an unplugged drive) without blocking a save. Opened with
+`--browser`, the native pickers become text fields.
+
+The API refuses requests a web page could make on your behalf: every
+request must be addressed to `127.0.0.1` or `localhost` (DNS rebinding), and
+a state-changing request carrying another site's `Origin` is rejected
+(`local_only` in `app/api.py`).
 
 ## Launching
 
@@ -643,6 +683,7 @@ app/
   migrate.py                 # opt-in copy of repo-local data to the user-data dir
   sync.py                    # check-on-launch pass over every input source
   folders.py                 # watched folders: find Takeout zips on disk
+  setup_service.py           # setup/Settings rules shared by the window and CLI
   launcher.py                # the app: logging, server thread, pywebview window
   jobs.py                    # background sync/enrich as child processes
   progress.py                # progress events from those children
@@ -652,7 +693,7 @@ app/
   ingest, normalize, storage, stats, topics,
   embeddings, umap_space, pageviews, api
 scripts/
-  setup_takeout.py           # interactive, re-runnable OAuth + preferences
+  setup_takeout.py           # terminal front end to app/setup_service.py
   compare_sources.py         # measure timestamp drift to set the dedup tolerance
   build_reference_space.py, check_env.py
 data/reference/              # read-only UMAP reference space (dev resource location)

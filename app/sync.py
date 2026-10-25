@@ -577,7 +577,9 @@ def run(
     known = visitlog.existing_keys(log_path)
     before = len(known)
 
-    if use_local:
+    if use_local and not localconfig.local_enabled(settings):
+        report["local"] = {"skipped": "Reading local Chrome history is turned off"}
+    elif use_local:
         progress.emit("local", "Reading Chrome history")
         report["local"] = sync_local_chrome(
             log_path=log_path,
@@ -826,7 +828,9 @@ def main(argv: list[str] | None = None) -> int:
 def _summarize(report: dict) -> str:
     lines = []
     local = report.get("local")
-    if local:
+    if local and "skipped" in local:
+        lines.append(f"Local Chrome: {local['skipped']}")
+    elif local:
         profiles = ", ".join(
             f"{p.get('display_name') or p['profile']} [{p['profile']}]: "
             f"{p['wikipedia_visits']}"

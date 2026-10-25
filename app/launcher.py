@@ -48,7 +48,7 @@ import webbrowser
 from pathlib import Path
 
 import config
-from app import jobs, migrate
+from app import jobs, migrate, setup_service
 
 log = logging.getLogger("launcher")
 
@@ -261,6 +261,42 @@ class ServerThread:
 # The window
 # ---------------------------------------------------------------------------
 
+class NativeApi:
+    """Native dialogs for the page, as window.pywebview.api.* in JavaScript.
+
+    pywebview exposes this object's public methods to the page and returns
+    their results to it as Promises. The setup screens use the pickers so
+    nobody has to type a path; in --browser mode there is no pywebview
+    object, and setup.js falls back to text fields.
+
+    _window starts with an underscore on purpose: pywebview exposes public
+    attributes too, and the window object must not be walked into.
+    """
+
+    def __init__(self):
+        self._window = None
+
+    def pick_folder(self, start: str = "") -> str | None:
+        """A folder chosen in the OS folder dialog, or None if cancelled."""
+        import webview
+
+        chosen = self._window.create_file_dialog(
+            webview.FileDialog.FOLDER, directory=start or str(Path.home())
+        )
+        return chosen[0] if chosen else None
+
+    def pick_file(self, start: str = "") -> str | None:
+        """A JSON file chosen in the OS open dialog (the client secret)."""
+        import webview
+
+        chosen = self._window.create_file_dialog(
+            webview.FileDialog.OPEN,
+            directory=start or str(Path.home() / "Downloads"),
+            file_types=("JSON files (*.json)", "All files (*.*)"),
+        )
+        return chosen[0] if chosen else None
+
+
 def run_window(url: str, debug: bool = False) -> None:
     """Open the app window and block until it is closed.
 
@@ -272,11 +308,12 @@ def run_window(url: str, debug: bool = False) -> None:
     """
     import webview
 
-    webview.create_window(
+    native = NativeApi()
+    native._window = webview.create_window(
         WINDOW_TITLE, url,
         width=WINDOW_SIZE[0], height=WINDOW_SIZE[1],
         min_size=WINDOW_MIN_SIZE, background_color=WINDOW_BACKGROUND,
-        text_select=True,
+        text_select=True, js_api=native,
     )
     storage_path = Path(config.USER_DATA_DIR) / "webview"
     storage_path.mkdir(parents=True, exist_ok=True)
@@ -385,10 +422,15 @@ def main(argv=None) -> int:
     write_server_record(server.port)
     log.info("Serving at %s", server.url)
 
-    # The sync step itself honors the sync.on_launch setting (--on-launch),
-    # so the launcher does not second-guess it; enrichment always runs
-    # because it is a no-op when nothing is pending.
-    runner.start("launch", launch_job_steps(args))
+    # First run: no settings yet, so the window shows the setup screens and
+    # their Finish button starts the first sync, after the user has chosen
+    # what to read. Otherwise the sync step itself honors sync.on_launch
+    # (--on-launch), so the launcher does not second-guess it; enrichment
+    # always runs because it is a no-op when nothing is pending.
+    if setup_service.is_first_run():
+        log.info("First run: waiting for setup before the first sync")
+    else:
+        runner.start("launch", launch_job_steps(args))
 
     try:
         if args.browser:
