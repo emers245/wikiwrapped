@@ -1,8 +1,9 @@
 # Packaging (maintainer notes)
 
 How the installers are put together: the runtime environment and locks
-(Milestone 1), the bundled resources (Milestone 2), and the installer
-build itself (Milestone 3). CI and the release procedure come next.
+(Milestone 1), the bundled resources (Milestone 2), the installer build
+itself (Milestone 3), and the GitHub Actions builds and draft releases
+(Milestone 4).
 
 ## The pieces
 
@@ -23,6 +24,9 @@ build itself (Milestone 3). CI and the release procedure come next.
 | `menu/wikipedia-wrapped.json` | The shortcut definition (menuinst). |
 | `icon/icon.png`, `icon/make_icons.py` | The icon source and its conversion to `.icns` / `.ico`. |
 | `test_install_macos.py` | Installs a built `.pkg` into a scratch folder, tests it, uninstalls it. |
+| `release_version.py` | The version being built; refuses a git tag that does not match it. |
+| `release-notes.md` | The template for a draft release's text. |
+| `../.github/workflows/build-installers.yml` | Builds, installs and self-tests all three installers; drafts the release. |
 
 `environment.yml` (repo root) is the developer env: `runtime.yml` verbatim
 plus dev tools. `tests/test_environment_specs.py` fails if the two drift,
@@ -427,3 +431,72 @@ uninstaller it embeds), or a service such as SignPath signs the finished
 macOS uses constructor's `signing_identity_name` and
 `notarization_identity_name`. All are unset, with a comment in
 `construct.yaml` where they go.
+
+## Releases: GitHub Actions (Milestone 4)
+
+`.github/workflows/build-installers.yml` builds the three installers on
+GitHub's runners, one job each:
+
+| Job | Runner | Installer |
+|---|---|---|
+| macOS Apple Silicon | `macos-15` | `WikipediaWrapped-<version>-macOS-AppleSilicon.pkg` |
+| macOS Intel | `macos-15-intel` | `WikipediaWrapped-<version>-macOS-Intel.pkg` |
+| Windows x64 | `windows-2025` | `WikipediaWrapped-<version>-Windows-x64.exe` |
+
+`macos-15-intel` is GitHub's last Intel macOS runner; GitHub supports
+Intel macOS until the macOS 15 image retires in fall 2027. After that,
+build the Intel `.pkg` on the Intel Mac with `build_installer.py` and
+upload it to the draft release by hand (`gh release upload`).
+
+Each job, in order: restores the cached conda packages and model; creates
+the app's runtime from the lock (plus the wheels and pytest) and the build
+tools; fetches the model and the reference space (verified, with this
+run's token, since the repository is private); runs the offline tests in
+that runtime; builds the installer; installs it silently, runs
+`--self-test` on the installed app, and uninstalls it. On Windows it
+installs twice, the first time into another folder, so that the second
+install exercises the upgrade path (removing the "older" one through its
+uninstaller).
+
+### Cutting a release
+
+1. Set `APP_VERSION` in `config.py`, commit, merge to `main`.
+2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+3. The workflow checks the tag matches `APP_VERSION`, builds and tests
+   all three installers, then creates a **draft** release with them and a
+   `SHA256SUMS` file, using `release-notes.md` as its text.
+4. On GitHub (Releases), edit the draft: write what is new, check the
+   files, then Publish. Nothing is public until you do.
+
+A tag with a suffix, such as `v0.1.0-rc.1`, runs the same pipeline for a
+test build and drafts it as a pre-release; delete the draft and the tag
+afterwards (`gh release delete v0.1.0-rc.1 --cleanup-tag`). Any other tag
+that does not match `APP_VERSION` fails the first job, before anything
+is built.
+
+"Run workflow" in the Actions tab (`workflow_dispatch`) builds and tests
+without making a release. GitHub only offers it once the workflow file is
+on the default branch (`main`).
+
+### Before the first run
+
+- The reference space asset the anchor names must exist as a release
+  (`reference-v0` now; see "The current anchor").
+- Nothing else: the workflow uses only this run's built-in token.
+
+### Caching and storage
+
+- The conda package files (not their unpacked copies) and the model are
+  cached per platform, keyed on the lock file and `model.json`, so a
+  re-run downloads neither. About 1.5 GB of the 10 GB cache allowance.
+- Installers pass from the build jobs to the release job as artifacts
+  kept for 1 day, uploaded unzipped. Artifact storage is charged by the
+  hour against the free 500 MB-month, so three installers for a day use
+  a small fraction of it. Release files do not count against it.
+
+### What a run costs while the repository is private
+
+GitHub's free plan includes 2,000 Actions minutes a month for private
+repositories, and macOS minutes count ten times, Windows twice (the
+billing page now lists per-minute prices instead, in the same ratio). A
+full run is dominated by the two macOS jobs.

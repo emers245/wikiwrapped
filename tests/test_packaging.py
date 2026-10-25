@@ -171,3 +171,53 @@ def test_packaging_files_are_plain_ascii():
         if "build" in path.relative_to(PACKAGING).parts:
             continue
         path.read_bytes().decode("ascii")
+
+
+# ---------------------------------------------------------------------------
+# The release workflow (.github/workflows/build-installers.yml)
+# ---------------------------------------------------------------------------
+
+release_version = load(PACKAGING / "release_version.py")
+WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build-installers.yml"
+
+
+def test_a_release_tag_must_name_the_code_version():
+    assert release_version.check_tag("v1.2.3", "1.2.3") is True
+    assert release_version.check_tag("v1.2.3-rc.1", "1.2.3") is False   # a test build
+    for bad in ("v1.2.4", "1.2.3", "v1.2", "v1.2.3rc1", "release-1.2.3"):
+        with pytest.raises(SystemExit):
+            release_version.check_tag(bad, "1.2.3")
+
+
+def test_the_version_check_writes_what_the_later_jobs_read(tmp_path, monkeypatch):
+    output = tmp_path / "github_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    assert release_version.main(["--tag", f"v{config.APP_VERSION}", "--github-output"]) == 0
+    assert output.read_text().splitlines() == [
+        f"version={config.APP_VERSION}", f"tag=v{config.APP_VERSION}", "prerelease=false"]
+
+
+def test_the_workflow_builds_every_locked_platform_with_matching_names():
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    matrix = workflow["jobs"]["build"]["strategy"]["matrix"]["include"]
+    locks = {p.stem for p in (PACKAGING / "locks").glob("*.txt")}
+    assert {entry["platform"] for entry in matrix} == locks
+    construct = (INSTALLER / "construct.yaml").read_text(encoding="utf-8")
+    for entry in matrix:
+        assert re.search(rf"^installer_filename: .*\.{entry['installer']}  #", construct, re.M)
+    # The steps look for the install where construct.yaml puts it.
+    steps = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "Library/WikipediaWrapped-App" in steps and "'WikipediaWrapped-App'" in steps
+    assert "Uninstall-WikipediaWrapped.exe" in steps
+    assert re.search(r"^name: WikipediaWrapped$", construct, re.M)
+    # Only the release job may write to the repository.
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["release"]["permissions"] == {"contents": "write"}
+
+
+def test_batch_files_keep_windows_line_endings():
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert re.search(r"^\*\.bat\s+text eol=crlf$", attributes, re.M)
+    assert re.search(r"^\*\.sh\s+text eol=lf$", attributes, re.M)

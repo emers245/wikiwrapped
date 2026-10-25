@@ -27,6 +27,10 @@ dependencies:
   - python=3.12.*
   - conda-lock=4.0.3
   - constructor=3.17.3
+  # The conda that every installer carries and runs on the user's machine
+  # (it installs the packages and makes the shortcut, with its own copy of
+  # menuinst), so it is pinned like the rest of the runtime.
+  - conda-standalone=26.7.0
   - rattler-build=0.77.0
   - pillow=12.3.0
   - uv=0.13.5

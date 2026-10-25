@@ -1,0 +1,5 @@
+# Line endings the installers depend on, whatever the checkout's settings:
+# cmd reads batch files with Unix line endings unreliably (line
+# continuations with ^ in particular), and bash refuses Windows ones.
+*.bat text eol=crlf
+*.sh  text eol=lf
