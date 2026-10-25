@@ -8,26 +8,38 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<!-- Visible in the served markup rather than switched on by script, so it
+     is up from the very first paint - before main.js has even fetched the
+     dashboard - and comes down only once the thread graph is laid out. -->
+<div id="loading">Launching...</div>
+
 <header>
   <h1>Wikipedia Wrapped</h1>
   <nav id="mode-toggle">
     <button id="btn-umap" class="active">UMAP</button>
-    <button id="btn-network">Network</button>
+    <button id="btn-network">Threads</button>
   </nav>
   <button id="btn-panels" class="active" aria-expanded="true"
           aria-controls="panels" title="Hide summary panels">Panels</button>
   <div id="summary-line">loading...</div>
+  <div id="data-warning" class="hidden"></div>
 </header>
 
 <aside id="panels">
   <div id="panels-inner">
-    <div class="panel" id="panel-categories">
+    <div class="panel" id="panel-categories"
+         title="Click a topic to isolate it; click the background or press
+                Escape to clear">
       <h2>Categories: you vs popular pages</h2><svg></svg>
     </div>
-    <div class="panel" id="panel-daily">
+    <div class="panel" id="panel-daily"
+         title="Drag the grips to pick a date range, drag the filled bar to
+                move it, double-click to reset; play sweeps the range">
       <h2>Visits per day</h2><svg></svg>
     </div>
-    <div class="panel" id="panel-hours">
+    <div class="panel" id="panel-hours"
+         title="Click an hour to keep only pages read then; play steps
+                through the day">
       <h2>Time of day</h2><svg></svg>
     </div>
   </div>
@@ -42,7 +54,7 @@
     <canvas id="backdrop"></canvas>
     <svg id="umap-svg"></svg>
   </div>
-  <div id="network-view" class="hidden"></div>
+  <div id="network-view" class="inactive"></div>
   <div id="viz-message" class="hidden"></div>
   <div id="popup" class="hidden"></div>
 </main>

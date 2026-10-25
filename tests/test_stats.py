@@ -30,6 +30,17 @@ def add_page(conn, title, timestamps, macro=None, raw=None):
         )
 
 
+def mark_unclassifiable(conn, title):
+    """Cache a NULL-labeled row, as topics.label_titles does for a page the
+    model declines to classify. Distinct from add_page() leaving no row at
+    all, which means the page has never been sent to the model."""
+    conn.execute(
+        "INSERT INTO topic_cache (canonical_title, macro_topic, raw_label,"
+        " fetched_at) VALUES (?, NULL, NULL, ?)",
+        (title, "2026-01-01T00:00:00Z"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # summary / most_visited (D2: pages unique, visits total)
 # ---------------------------------------------------------------------------
@@ -191,4 +202,36 @@ def test_topic_distribution_fractions_over_unique_pages(conn):
 
 def test_topic_distribution_empty_db(conn):
     dist = stats.topic_distribution(conn)
-    assert dist == {"total_pages": 0, "macro_topics": [], "raw_labels": []}
+    assert dist == {
+        "total_pages": 0,
+        "pages_unlabeled": 0,
+        "macro_topics": [],
+        "raw_labels": [],
+    }
+
+
+def test_topic_distribution_separates_unlabeled_from_unclassified(conn):
+    """Both land in the "Unclassified" bar, but only one is a missing step:
+    a page with no cache row has never been sent to the topic model, while
+    a NULL-labeled row means the model was asked and had no answer."""
+    add_page(conn, "Physics", ["2025-01-01T10:00:00Z"],
+             macro="STEM", raw="STEM.Physics")
+    add_page(conn, "Refused Page", ["2025-01-02T10:00:00Z"])
+    mark_unclassifiable(conn, "Refused Page")
+    add_page(conn, "Never Asked", ["2025-01-03T10:00:00Z"])   # no cache row
+
+    dist = stats.topic_distribution(conn)
+    assert dist["total_pages"] == 3
+    assert dist["pages_unlabeled"] == 1        # only "Never Asked"
+    # The chart itself is unchanged: both still report as Unclassified.
+    macro = {r["macro_topic"]: r["pages"] for r in dist["macro_topics"]}
+    assert macro == {"STEM": 1, "Unclassified": 2}
+
+
+def test_topic_distribution_counts_no_pages_as_unlabeled_when_all_cached(conn):
+    add_page(conn, "Physics", ["2025-01-01T10:00:00Z"],
+             macro="STEM", raw="STEM.Physics")
+    mark_unclassifiable(conn, "Refused Page")   # cached, though not a page
+    add_page(conn, "Refused Page", ["2025-01-02T10:00:00Z"])
+
+    assert stats.topic_distribution(conn)["pages_unlabeled"] == 0

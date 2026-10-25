@@ -1,6 +1,7 @@
 /* Wikipedia Wrapped frontend bootstrap: fetches /dashboard once, owns the
-   shared topic palette, the hover popup, and the cross-component
-   highlight bus. Muted palette on an off-white theme. */
+   shared topic palette, the hover popup, and the two cross-component
+   buses - transient highlight (hover) and persistent filter (selection).
+   Muted palette on an off-white theme. */
 
 window.WW = (function () {
   const PALETTE = [
@@ -9,6 +10,9 @@ window.WW = (function () {
     "#c99a7a", "#94a7c4", "#b0c98f", "#c98fa6", "#87a8a4",
   ];
   const UNCLASSIFIED_COLOR = "#b3afa7";
+  // Fill for a page whose topic is not the selected one. Lighter and less
+  // saturated than any palette entry, so a selection reads at a glance.
+  const GREY = "#d3cfc7";
 
   const state = { data: null, topicColors: {}, mode: "umap" };
 
@@ -20,6 +24,16 @@ window.WW = (function () {
 
   function colorFor(topic) {
     return state.topicColors[topic || "Unclassified"] || UNCLASSIFIED_COLOR;
+  }
+
+  /* Display name for a macro topic. The stored labels keep the taxonomy
+     shape ("Culture.Food and drink"); this is the one place that decides
+     how they read on screen, so the panels and the popup always agree. */
+  const TOPIC_RENAMES = { "Food and drink": "Food & drink" };
+
+  function topicLabel(topic) {
+    const name = (topic || "Unclassified").replace(/^Culture\./, "");
+    return TOPIC_RENAMES[name] || name;
   }
 
   function hexToRgba(hex, alpha) {
@@ -44,7 +58,7 @@ window.WW = (function () {
       <h3><a href="${pageUrl(page.title)}" target="_blank"
              rel="noopener">${esc(page.title)}</a></h3>
       <table>
-        <tr><td>Topic</td><td>${esc(page.macro_topic || "Unclassified")}</td></tr>
+        <tr><td>Topic</td><td>${esc(topicLabel(page.macro_topic))}</td></tr>
         <tr><td>Your visits</td><td>${page.visit_count}</td></tr>
         <tr><td>First seen</td><td>${esc((page.first_seen || "").slice(0, 10))}</td></tr>
         <tr><td>Views by others</td><td>${views}</td></tr>
@@ -79,6 +93,68 @@ window.WW = (function () {
     if (!page) scheduleHidePopup();
   }
 
+  /* -- filter bus ---------------------------------------------------------- */
+  /* Selections made in the sidebar, applied to whichever visualization is
+     showing. The two kinds are deliberately different: a topic selection
+     greys the pages that do not match, so the shape of the whole data set
+     stays visible behind the one you picked, while the time selections
+     remove pages outright, which is what makes a sweep read as motion.
+
+     The panels own the widgets and call setFilter(); the views only read
+     the two predicates below. Nothing here recomputes the panels
+     themselves - they always describe the full history, so the track a
+     slider runs along cannot move while you are dragging it. */
+  const filters = { topic: null, dayRange: null, hour: null };
+
+  function topicGreyed(topic) {
+    return filters.topic !== null && (topic || "Unclassified") !== filters.topic;
+  }
+
+  function pageGreyed(page) {
+    return topicGreyed(page.macro_topic);
+  }
+
+  /* A page survives if at least one visit falls in the day range and at
+     least one falls in the selected hour - not necessarily the same visit.
+     `_times` is sorted, so most pages reject on the first comparison. */
+  function pageVisible(page) {
+    const range = filters.dayRange;
+    const hour = filters.hour;
+    if (range === null && hour === null) return true;
+    const times = page._times;
+    if (!times.length) return false;
+    if (hour !== null && !page._hours.has(hour)) return false;
+    if (range === null) return true;
+    if (times[0] >= range[1] || times[times.length - 1] < range[0]) return false;
+    return times.some(t => t >= range[0] && t < range[1]);
+  }
+
+  let filterFrame = null;
+
+  function setFilter(patch) {
+    const topicChanged = "topic" in patch && patch.topic !== filters.topic;
+    Object.assign(filters, patch);
+    // A sweep calls this every frame, so coalesce to one repaint per frame.
+    if (filterFrame !== null) {
+      filterFrame.topicChanged = filterFrame.topicChanged || topicChanged;
+      return;
+    }
+    filterFrame = { topicChanged: topicChanged };
+    requestAnimationFrame(() => {
+      const pending = filterFrame;
+      filterFrame = null;
+      if (window.WWmap) WWmap.applyFilters(pending.topicChanged);
+      if (window.WWnet) WWnet.applyFilters(pending.topicChanged);
+      if (window.WWpanels) WWpanels.syncFilters();
+    });
+  }
+
+  // Escape is the one global way out of every selection at once.
+  window.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    if (window.WWpanels) WWpanels.clearAll();
+  });
+
   /* -- mode toggle --------------------------------------------------------- */
   const umapView = document.getElementById("umap-view");
   const netView = document.getElementById("network-view");
@@ -88,8 +164,8 @@ window.WW = (function () {
   function setMode(mode) {
     state.mode = mode;
     highlight(null);
-    umapView.classList.toggle("hidden", mode !== "umap");
-    netView.classList.toggle("hidden", mode !== "network");
+    umapView.classList.toggle("inactive", mode !== "umap");
+    netView.classList.toggle("inactive", mode !== "network");
     btnUmap.classList.toggle("active", mode === "umap");
     btnNet.classList.toggle("active", mode === "network");
     if (mode === "network") WWnet.show();
@@ -242,10 +318,29 @@ window.WW = (function () {
   })();
 
   /* -- boot ---------------------------------------------------------------- */
+  /* Every exit from boot() has to reach this, including the failures:
+     an overlay that is never dismissed is a worse outcome than the frozen
+     dashboard it replaced. */
+  function finishLaunch() {
+    document.getElementById("loading").classList.add("done");
+  }
+
   async function boot() {
     const response = await fetch("/dashboard");
     state.data = await response.json();
     const data = state.data;
+
+    /* Parse each page's visit stamps once. The filter predicates run on
+       every frame of a sweep and highlight() draws a marker per visit, so
+       neither can afford to re-parse ISO strings on the way through.
+       Local time throughout, matching the server-side stats, which convert
+       to the device zone by default (config.get_timezone). */
+    data.pages.forEach(page => {
+      page._stamps = page.visits.map(ts => new Date(ts))
+        .sort((a, b) => a - b);
+      page._times = page._stamps.map(d => d.getTime());
+      page._hours = new Set(page._stamps.map(d => d.getHours()));
+    });
 
     const topicSet = new Set();
     data.pages.forEach(p => topicSet.add(p.macro_topic || "Unclassified"));
@@ -263,12 +358,30 @@ window.WW = (function () {
       `${s.unique_pages} pages | ${s.total_visits} visits | ` +
       `${(s.first_visit || "").slice(0, 10)} to ${(s.last_visit || "").slice(0, 10)}`;
 
+    /* Enrichment is a separate pass from ingestion, so a fresh import can
+       leave most of the history with no topic and no coordinates - which
+       shows up as a dominant "Unclassified" bar and a near-empty map,
+       neither of which looks like a missing step. Say so plainly instead.
+       "Unlabeled" is not "Unclassified": the former has never been sent to
+       the topic model, the latter came back with no prediction. */
+    const unlabeled = data.stats.topics.pages_unlabeled || 0;
+    const noCoords = data.pages.filter(p => p.x === null || p.x === undefined).length;
+    if (unlabeled || noCoords) {
+      const parts = [];
+      if (unlabeled) parts.push(`${unlabeled} pages have no topic yet`);
+      if (noCoords) parts.push(`${noCoords} are missing map coordinates`);
+      const warning = document.getElementById("data-warning");
+      warning.textContent = parts.join(", ") + " - run POST /enrich";
+      warning.classList.remove("hidden");
+    }
+
     if (!data.pages.length) {
       document.getElementById("viz-message").textContent =
         "No history ingested yet - run the extractor, then POST /ingest " +
         "and /enrich.";
       document.getElementById("viz-message").classList.remove("hidden");
       btnUmap.disabled = btnNet.disabled = true;
+      finishLaunch();
       return;
     }
 
@@ -280,15 +393,39 @@ window.WW = (function () {
     if (hasMap) {
       WWmap.init(state);
       setMode("umap");
+      /* Build the thread graph now, behind the launch overlay, so the
+         cost lands before the dashboard is handed over rather than on the
+         first click of the Threads tab. The button stays disabled until
+         the graph exists as a backstop - the overlay is what the user
+         actually sees, but nothing should be clickable before it is real.
+         setMode("network") already builds it in the other branch, so this
+         is only for the case where Threads is the tab not opened. */
+      btnNet.disabled = true;
+      btnNet.title = "Building the thread graph...";
+      WWnet.prebuild(() => {
+        btnNet.disabled = false;
+        btnNet.removeAttribute("title");
+        finishLaunch();
+      });
     } else {
       btnUmap.disabled = true;
       btnUmap.title = "Run scripts/build_reference_space.py and POST " +
         "/enrich to enable the UMAP view";
-      setMode("network");
+      setMode("network");   // builds the graph synchronously
+      finishLaunch();
     }
   }
-  boot();
 
-  return { state, colorFor, hexToRgba, pageUrl, esc,
-           showPopup, scheduleHidePopup, highlight };
+  boot().catch(error => {
+    // Without this the overlay would sit on "Launching..." forever, hiding
+    // the one thing worth reporting.
+    const message = document.getElementById("viz-message");
+    message.textContent = "Could not load the dashboard: " + error.message;
+    message.classList.remove("hidden");
+    finishLaunch();
+  });
+
+  return { state, colorFor, hexToRgba, pageUrl, esc, topicLabel, GREY,
+           showPopup, scheduleHidePopup, highlight,
+           filters, setFilter, pageGreyed, pageVisible, topicGreyed };
 })();
