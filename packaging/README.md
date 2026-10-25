@@ -76,8 +76,8 @@ Audited by parsing every import in `config.py`, `app/`, `extract/` and
 |---|---|
 | pytest, httpx | imported only by `tests/` (httpx still arrives as a transitive dependency of the Hugging Face stack) |
 | matplotlib | imported nowhere; ad-hoc plotting only |
-| pandas, pyarrow | imported nowhere in the repo. Unpickling the reducer imports pandas only because `sklearn.utils.fixes` tries `import pandas` when it is installed (pandas then pulls pyarrow); umap-learn does not depend on either. Verified: the runtime env (no pandas) unpickles the reducer and runs `transform()`. |
-| python-multipart | FastAPI needs it only for form uploads, which the app has none of |
+| pandas, pyarrow | imported nowhere in the repo, so dropped from the dev env too (2026-10-25). Unpickling the reducer imports pandas only because `sklearn.utils.fixes` tries `import pandas` when it is installed (pandas then pulls pyarrow); umap-learn does not depend on either. Verified: the runtime env (no pandas) unpickles the reducer and runs `transform()`. |
+| python-multipart | not listed: FastAPI needs it only for form uploads, which the app has none of. It still arrives in the locks as a transitive dependency of the web stack, like httpx. |
 
 ## Sizes (Milestone 1 measurement, before the model and reference space)
 

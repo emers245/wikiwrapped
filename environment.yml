@@ -45,10 +45,8 @@ dependencies:
   - httpx=0.27.*
   # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
   - matplotlib-base=3.9.*
-  # -- Not imported anywhere in the repo (app, scripts, or tests); kept for
-  #    now pending a decision to drop them (see packaging/README.md).
-  - pandas=2.2.*
-  - pyarrow=17.*
+  # -- FastAPI's form-upload support. The app has no form uploads, so it is
+  #    not listed in the runtime spec (it still arrives there transitively).
   - python-multipart=0.0.*
   # -- App window, from PyPI on every platform (conda-forge has no macOS
   #    build). Must match packaging/wheels/requirements.in; the installers
