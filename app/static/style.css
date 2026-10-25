@@ -99,6 +99,68 @@ header h1 {
   padding: 3px 8px;
 }
 
+/* -- background job strip ----------------------------------------------- */
+/* Floats over the top of the visualization while a sync or enrichment job
+   runs, and afterwards offers a reload. Absolutely positioned inside #viz
+   so it never changes the grid. */
+#job-strip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+#job-strip.problem { border-color: #e6d6bb; background: #f7efe2; }
+#job-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#job-count { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#job-bar {
+  position: relative;
+  flex: 0 0 120px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+#job-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+/* No count to show (loading the model, resolving titles): a sliding
+   segment says "working" without pretending to know how far along. */
+#job-bar.indeterminate #job-bar-fill {
+  width: 30%;
+  transition: none;
+  animation: job-slide 1.2s ease-in-out infinite;
+}
+@keyframes job-slide {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+#job-strip button {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#job-reload { border-color: var(--accent); color: var(--accent); }
+
 /* -- main viz ----------------------------------------------------------- */
 #viz { grid-column: 2; grid-row: 2; position: relative; overflow: hidden; }
 #umap-view, #network-view { position: absolute; inset: 0; }
@@ -333,3 +395,199 @@ body.resizing .slider-fill { cursor: grabbing; }
   header h1 { font-size: 15px; }
   #summary-line { display: none; }
 }
+
+/* -- account filter note ------------------------------------------------ */
+/* A footnote to the summary line while accounts are hidden: same quiet
+   amber as #data-warning, but a button, because it opens Settings. */
+#filter-note {
+  font-size: 12px;
+  color: #a8763f;
+  background: #f7efe2;
+  border: 1px solid #e6d6bb;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+/* -- header buttons (Settings, Help) ------------------------------------- */
+/* The same quiet style as the Panels toggle in its "off" state. */
+.header-btn {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--ink-soft);
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.header-btn:hover { color: var(--ink); }
+
+/* -- setup and Settings overlay (setup.js) -------------------------------- */
+/* Covers the whole window, above the dashboard and the job strip. Plain
+   divs inside, not header/footer, because the page's own `header` rule
+   would otherwise lay them out as the app header. */
+#setup {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  background: rgba(58, 58, 56, 0.25);
+  overflow-y: auto;
+}
+#setup-card {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 80px);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+#setup-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 18px 22px 10px;
+  border-bottom: 1px solid var(--line);
+}
+#setup-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#setup-step { margin-left: auto; font-size: 12px; color: var(--ink-soft); }
+#setup-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 22px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+#setup-body h3 { font-size: 14px; margin: 16px 0 4px; }
+#setup-body .setup-section-title {
+  font-size: 15px;
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+#setup-body .setup-section-title:first-child { border-top: none; }
+#setup-error {
+  margin: 0 22px 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #8a4b2e;
+  background: #f7efe2;
+  border: 1px solid #e6d6bb;
+  border-radius: 4px;
+}
+#setup-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+}
+.setup-spacer { flex: 1 1 auto; }
+
+#setup button {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--ink);
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#setup button:disabled { opacity: 0.5; cursor: default; }
+#setup button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+#setup input[type="text"], #setup input[type="number"] {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+}
+#setup a { color: var(--accent); }
+
+.setup-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
+.setup-check { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.setup-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.setup-field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.setup-field input[type="number"] { width: 90px; }
+.setup-path {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.setup-path-input { flex: 1 1 260px; }
+.setup-muted { color: var(--ink-soft); font-size: 13px; }
+.setup-problem { color: #a8763f; font-size: 13px; }
+.setup-ok { color: #5f8f66; }
+.setup-waiting { color: var(--accent); }
+.setup-folder, .setup-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.setup-folder-main { flex: 1 1 auto; min-width: 0; }
+.setup-label { width: 150px; }
+.setup-problems {
+  margin-top: 12px;
+  padding: 4px 14px;
+  background: #f7efe2;
+  border: 1px solid #e6d6bb;
+  border-radius: 5px;
+}
+details.setup-section > summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+
+/* -- Help viewer (help.js) ---------------------------------------------- */
+/* Above the Settings overlay (z-index 50): help links in Settings open on
+   top of it, and closing Help returns to Settings where it was. */
+#help {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 30px 16px;
+  background: rgba(58, 58, 56, 0.25);
+}
+#help-card {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+#help-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+#help-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+#help-head a { font-size: 13px; color: var(--accent); }
+#help-close {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--ink);
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#help-frame { flex: 1 1 auto; width: 100%; border: none; background: var(--bg); }

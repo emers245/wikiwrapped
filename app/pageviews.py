@@ -27,8 +27,13 @@ log = logging.getLogger(__name__)
 
 
 def history_date_range(conn: sqlite3.Connection) -> tuple[str, str] | None:
-    """The user's history span as YYYYMMDD bounds (D7); None if no visits."""
-    first, last = storage.visit_date_range(conn)
+    """The user's history span as YYYYMMDD bounds (D7); None if no visits.
+
+    Always the WHOLE history, even when the dashboard is showing only some
+    accounts: the pageview cache is keyed on this range, so a narrower one
+    would find nothing cached and every page would read "n/a".
+    """
+    first, last = storage.full_visit_date_range(conn)
     if first is None:
         return None
     to_day = lambda stamp: dt.datetime.fromisoformat(stamp).strftime("%Y%m%d")  # noqa: E731

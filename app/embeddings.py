@@ -70,8 +70,12 @@ def embed_titles(
     session=None,
     model=None,
     progress: bool = False,
+    on_progress=None,
 ) -> dict:
-    """Fetch summaries and cache embeddings for every title missing one."""
+    """Fetch summaries and cache embeddings for every title missing one.
+
+    progress draws a tqdm bar (terminal use); on_progress(done, total), if
+    given, is called after each committed chunk (the app window)."""
     unique = list(dict.fromkeys(t for t in titles if t))
     have = storage.embedded_titles(conn, config.EMBEDDING_MODEL)
     todo = [t for t in unique if t not in have]
@@ -109,15 +113,19 @@ def embed_titles(
             storage.upsert_embedding(conn, title, config.EMBEDDING_MODEL, vector)
         conn.commit()
         report["embedded"] += len(chunk)
+        if on_progress is not None:
+            on_progress(report["embedded"], len(todo))
     return report
 
 
 def embed_pages(
-    conn: sqlite3.Connection, session=None, model=None, progress: bool = False
+    conn: sqlite3.Connection, session=None, model=None, progress: bool = False,
+    on_progress=None,
 ) -> dict:
     """Embed every visited page missing a vector (the /enrich entry point)."""
     report = embed_titles(
-        conn, storage.all_page_titles(conn), session, model, progress
+        conn, storage.all_page_titles(conn), session, model, progress,
+        on_progress=on_progress,
     )
     return {
         "pages_embedded": report["embedded"],

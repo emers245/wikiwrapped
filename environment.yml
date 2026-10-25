@@ -25,6 +25,9 @@ dependencies:
   - tqdm=4.*
   - pyarrow=17.*
   - tzlocal=5.*
+  # -- Per-user data directory (~/Library/Application Support, %APPDATA%,
+  #    XDG): the one place the app writes; see config.user_data_dir.
+  - platformdirs=4.*
   # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
   - matplotlib-base=3.9.*
   # -- Session-network metrics (in/out-degree, PageRank)
@@ -42,3 +45,12 @@ dependencies:
   # -- Testing (httpx backs FastAPI's TestClient)
   - pytest=8.*
   - httpx=0.27.*
+  # -- App window (app/launcher.py imports it lazily; nothing else needs it).
+  #    From PyPI, not conda-forge: conda-forge's pywebview 6.2.1 has only
+  #    Windows and Linux builds, and its macOS dependencies
+  #    pyobjc-framework-webkit/-security are missing for osx-arm64 (checked
+  #    2026-10-24). pip brings the pyobjc wheels on macOS and pythonnet on
+  #    Windows. The packaging step has to account for this pip install.
+  - pip
+  - pip:
+      - pywebview==6.2.1

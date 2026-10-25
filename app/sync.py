@@ -1,13 +1,19 @@
 """Check-on-launch sync: refresh the visit log, then the DB (D12).
 
-Not a daemon and not a scheduler. This is a single pass that run.sh invokes
-before starting uvicorn, and that you can run by hand any time:
+Not a daemon and not a scheduler. This is a single pass that the launcher
+runs as a background job (app/jobs.py) once the window is open, and that
+you can run by hand any time:
 
     python -m app.sync                 # sync now (respects the interval)
     python -m app.sync --force         # ignore the interval
-    python -m app.sync --on-launch     # what run.sh calls; obeys the config gate
+    python -m app.sync --on-launch     # what the launcher runs; obeys sync.on_launch
     python -m app.sync --rebuild       # re-ingest the whole log into the DB
-    python -m app.sync --no-drive      # local Chrome only
+    python -m app.sync --no-drive      # skip the Drive (OAuth) route
+    python -m app.sync --no-folders    # skip watched folders
+
+Three sources, each independent of the others: local Chrome (always),
+watched folders (whenever any are configured), and Google Drive via OAuth
+(when takeout.enabled is on).
 
 The order matters. Visits are appended to the append-only log FIRST, and the
 DB is updated from the log second. The log is the durable artifact: if the
@@ -16,9 +22,9 @@ up. Chrome expires local history after about 90 days, so a visit that fails
 to reach the log may be gone for good.
 
 THE SYNC MUST NEVER BLOCK OR BREAK STARTUP. Every expected failure - Drive
-unreachable, token expired, archive malformed, no contact email configured -
-is caught, recorded in the returned report and in data/sync_state.json, and
-surfaced by GET /health. run() does not raise for any of them, and the
+unreachable, token expired, archive malformed, Wikipedia unreachable - is
+caught, recorded in the returned report and in sync_state.json (in the
+user-data dir), and surfaced by GET /health. run() does not raise for any of them, and the
 dashboard serves whatever data already exists.
 """
 
@@ -31,11 +37,13 @@ import logging
 import shutil
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
 import config
-from app import dedup, drive, ingest, localconfig, storage, visitlog
+from app import (dedup, drive, folders, ingest, localconfig, migrate, progress,
+                 storage, visitlog)
 from extract import extract_history
 
 log = logging.getLogger(__name__)
@@ -291,8 +299,9 @@ def _ingest_one_archive(conn, creds, archive, email, log_path=None, known=None) 
     """Download one archive, keep only its Wikipedia visits, discard the rest.
 
     The archive lands in a private temp directory that is removed in a
-    finally block. Only the filtered Wikipedia subset is ever written into
-    the project's data directory: the full export is never persisted here.
+    finally block, as soon as its history rows are in memory. Only the
+    filtered Wikipedia subset is ever written into the user-data directory:
+    the full export is never persisted.
     """
     file_id = archive["id"]
     name = archive.get("name") or file_id
@@ -304,40 +313,62 @@ def _ingest_one_archive(conn, creds, archive, email, log_path=None, known=None) 
         try:
             rows = extract_history.load_takeout_zip(local_zip)
         except extract_history.NoHistoryInArchive:
-            # One part of a multi-part export, carrying Calendar/Bookmarks/etc.
-            # Record it so it is not downloaded again, and say nothing louder
-            # than INFO: this is normal, not a failure.
-            log.info(
-                "Takeout %s (%s): no Chrome history in this part; skipping.",
-                name, email,
-            )
-            storage.record_processed_archive(
-                conn, file_id=file_id, modified_time=modified, account=email,
-                file_name=name, visits_extracted=0,
-            )
-            conn.commit()
+            _record_archive_without_history(conn, file_id, modified, email, name)
             return 0
-        # Filter to Wikipedia BEFORE anything is retained.
-        visits, counts = extract_history.build_visits(rows)
-        records = [
-            visitlog.record(
-                visit["url"],
-                visit["title"],
-                visit["timestamp"],
-                visitlog.SOURCE_TAKEOUT,
-                account=email,
-            )
-            for visit in visits
-        ]
-        added = visitlog.append(records, path=log_path, known=known)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+    return _log_archive_rows(
+        conn, rows, file_id=file_id, modified=modified, account=email,
+        name=name, log_path=log_path, known=known,
+    )
+
+
+def _record_archive_without_history(conn, file_id, modified, account, name) -> None:
+    """One part of a multi-part export, carrying Calendar/Bookmarks/etc.
+
+    Recorded so it is not read (or downloaded) again, and said no louder
+    than INFO: this is normal, not a failure.
+    """
+    log.info(
+        "Takeout %s (%s): no Chrome history in this part; skipping.",
+        name, account or "no label",
+    )
+    storage.record_processed_archive(
+        conn, file_id=file_id, modified_time=modified, account=account,
+        file_name=name, visits_extracted=0,
+    )
+    conn.commit()
+
+
+def _log_archive_rows(
+    conn, rows, *, file_id, modified, account, name, log_path=None, known=None
+) -> int:
+    """The half of archive ingestion shared by the Drive and folder routes.
+
+    Filters the rows to Wikipedia BEFORE anything is retained, appends them
+    to the visit log as source "takeout" with the given account (an email
+    from Drive, a folder's label for a watched folder), and records the
+    archive as processed. Returns how many records were new to the log.
+    """
+    visits, counts = extract_history.build_visits(rows)
+    records = [
+        visitlog.record(
+            visit["url"],
+            visit["title"],
+            visit["timestamp"],
+            visitlog.SOURCE_TAKEOUT,
+            account=account,
+        )
+        for visit in visits
+    ]
+    added = visitlog.append(records, path=log_path, known=known)
 
     storage.record_processed_archive(
         conn,
         file_id=file_id,
         modified_time=modified,
-        account=email,
+        account=account,
         file_name=name,
         visits_extracted=counts["kept"],
     )
@@ -351,15 +382,149 @@ def _ingest_one_archive(conn, creds, archive, email, log_path=None, known=None) 
             "Takeout %s (%s): %d Wikipedia row(s) had unusable timestamps and "
             "were dropped. If that is most of them, the export's timestamp "
             "format has changed; check extract_history.usec_to_unix.",
-            name, email, counts["bad_timestamp"],
+            name, account or "no label", counts["bad_timestamp"],
         )
     log.info(
         "Takeout %s (%s): %d Wikipedia visits kept of %d rows "
         "(%d non-Wikipedia, %d bad timestamp, %d duplicate), %d new to the log.",
-        name, email, counts["kept"], counts["read"], counts["non_wikipedia"],
-        counts["bad_timestamp"], counts["duplicate"], added,
+        name, account or "no label", counts["kept"], counts["read"],
+        counts["non_wikipedia"], counts["bad_timestamp"], counts["duplicate"],
+        added,
     )
     return added
+
+
+# ---------------------------------------------------------------------------
+# Watched folders: Takeout zips on this computer, no sign-in
+# ---------------------------------------------------------------------------
+
+def sync_folders(conn, settings, log_path=None, known=None) -> dict:
+    """Ingest any new Takeout zip found in the configured watched folders.
+
+    Reads each zip in place and never modifies, moves, copies, or deletes
+    it. Like the Drive route, only the Wikipedia subset is kept.
+
+    Failures are per folder and per file, and none of them stops the pass:
+    a missing folder, an unreadable one, a corrupt zip, or an online-only
+    Drive file that cannot be fetched is recorded and the next one is tried.
+    A file that failed is NOT marked processed, so the next sync retries it
+    (a zip that is still downloading usually just needs another go).
+    """
+    report = {
+        "folders": [],
+        "archives_processed": 0,
+        "archives_skipped": 0,
+        "visits_logged": 0,
+        "errors": [],
+    }
+    seen: set[Path] = set()   # a zip inside two watched folders is read once
+    for entry in localconfig.watched_folders(settings):
+        folder_report = _sync_one_folder(
+            conn, entry, seen, log_path=log_path, known=known
+        )
+        report["folders"].append(folder_report)
+        report["archives_processed"] += folder_report["ingested"]
+        report["archives_skipped"] += folder_report["skipped"]
+        report["visits_logged"] += folder_report["visits_logged"]
+        report["errors"].extend(folder_report["errors"])
+    return report
+
+
+def _sync_one_folder(conn, entry, seen, log_path=None, known=None) -> dict:
+    path, label = entry["path"], entry.get("label") or ""
+    name = f"Watched folder {label!r}" if label else f"Watched folder {path}"
+    progress.emit("folders", f"Checking {label or path} for Takeout archives")
+    folder_report = {
+        "path": path,
+        "label": label,
+        "status": "ok",
+        "zips_found": 0,
+        "ingested": 0,
+        "skipped": 0,
+        "failed": 0,
+        "visits_logged": 0,
+        "errors": [],
+    }
+    try:
+        scan = folders.scan(path)
+    except folders.FolderUnavailable as exc:
+        folder_report["status"] = exc.status
+        folder_report["errors"].append(f"{name}: {exc}")
+        return folder_report
+    folder_report["errors"].extend(f"{name}: {message}" for message in scan.errors)
+    folder_report["zips_found"] = len(scan.zips)
+
+    for zip_path in scan.zips:
+        if zip_path in seen:
+            folder_report["skipped"] += 1
+            continue
+        seen.add(zip_path)
+        try:
+            stat = zip_path.stat()
+            file_id, modified = folders.archive_key(zip_path, stat)
+        except OSError as exc:
+            folder_report["failed"] += 1
+            folder_report["errors"].append(f"{name}: {zip_path.name}: {exc}")
+            continue
+        if storage.is_archive_processed(conn, file_id, modified):
+            folder_report["skipped"] += 1
+            continue
+        progress.emit("folders", f"Reading {zip_path.name}")
+        try:
+            added = _ingest_local_archive(
+                conn, zip_path, file_id, modified, label or None,
+                log_path=log_path, known=known,
+            )
+        except Exception as exc:
+            folder_report["failed"] += 1
+            folder_report["errors"].append(
+                f"{name}: {zip_path.name}: {_describe_read_failure(exc, stat)}"
+            )
+            continue
+        folder_report["ingested"] += 1
+        folder_report["visits_logged"] += added
+
+    if folder_report["failed"]:
+        folder_report["status"] = "error"
+    return folder_report
+
+
+def _ingest_local_archive(
+    conn, zip_path, file_id, modified, label, log_path=None, known=None
+) -> int:
+    """Read one local zip in place and log its Wikipedia visits.
+
+    zipfile reads only the archive's directory and the one history member,
+    so a multi-gigabyte export costs little more than a small one.
+    """
+    try:
+        rows = extract_history.load_takeout_zip(zip_path)
+    except extract_history.NoHistoryInArchive:
+        _record_archive_without_history(conn, file_id, modified, label, zip_path.name)
+        return 0
+    return _log_archive_rows(
+        conn, rows, file_id=file_id, modified=modified, account=label,
+        name=zip_path.name, log_path=log_path, known=known,
+    )
+
+
+def _describe_read_failure(exc: Exception, stat) -> str:
+    """Turn a read failure into something a user can act on."""
+    if isinstance(exc, zipfile.BadZipFile):
+        return (
+            "not a readable zip. It may still be downloading or syncing, or "
+            "it may be damaged; it will be tried again next sync."
+        )
+    if isinstance(exc, OSError):
+        message = f"could not be read ({exc.strerror or exc})."
+        if folders.looks_cloud_only(stat):
+            message += (
+                " It looks like an online-only Google Drive file; make the "
+                "folder available offline in Google Drive for desktop, or "
+                "check your internet connection."
+            )
+        return message
+    return str(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +540,7 @@ def run(
     use_drive: bool = True,
     use_local: bool = True,
     rebuild: bool = False,
+    use_folders: bool = True,
 ) -> dict:
     """One sync pass. Returns a report; never raises for expected failures."""
     started = dt.datetime.now(dt.timezone.utc)
@@ -385,6 +551,7 @@ def run(
         "skipped": False,
         "reason": None,
         "local": None,
+        "folders": None,
         "takeout": None,
         "ingest": None,
         "errors": [],
@@ -394,7 +561,7 @@ def run(
     # Cheap check, early exit. Takeout produces a new archive every ~2 months,
     # so there is nothing to gain from checking on every relaunch.
     if on_launch and not localconfig.sync_on_launch(settings):
-        report.update(skipped=True, reason="sync_on_launch is off in config.local.toml")
+        report.update(skipped=True, reason="sync.on_launch is off in the settings")
         return report
     if not force:
         elapsed = hours_since_last_sync(state)
@@ -410,7 +577,10 @@ def run(
     known = visitlog.existing_keys(log_path)
     before = len(known)
 
-    if use_local:
+    if use_local and not localconfig.local_enabled(settings):
+        report["local"] = {"skipped": "Reading local Chrome history is turned off"}
+    elif use_local:
+        progress.emit("local", "Reading Chrome history")
         report["local"] = sync_local_chrome(
             log_path=log_path,
             known=known,
@@ -422,7 +592,16 @@ def run(
     try:
         conn = storage.connect(db_path)
 
+        if use_folders and localconfig.watched_folders(settings):
+            report["folders"] = sync_folders(
+                conn, settings, log_path=log_path, known=known
+            )
+            report["errors"].extend(report["folders"]["errors"])
+        elif use_folders:
+            report["folders"] = {"skipped": "No watched folders configured"}
+
         if use_drive and localconfig.takeout_enabled(settings):
+            progress.emit("drive", "Checking Google Drive for new Takeout archives")
             report["takeout"] = sync_takeout(
                 conn, settings, log_path=log_path, known=known
             )
@@ -433,6 +612,12 @@ def run(
 
         newly_logged = len(known) - before
         report["visits_logged"] = newly_logged
+        if newly_logged:
+            progress.emit(
+                "database",
+                f"Adding {newly_logged} new visit(s); new article titles are "
+                "looked up on Wikipedia",
+            )
         report["ingest"] = _update_database(
             conn, log_path=log_path, newly_logged=newly_logged, rebuild=rebuild
         )
@@ -458,12 +643,26 @@ def run(
             "errors": report["errors"][:10],
             "reauthorize": report["reauthorize"],
             "visits_logged": report.get("visits_logged", 0),
+            # Per-folder status, so /health and the UI can say which folder
+            # is missing or holds an unreadable zip without a re-scan.
+            "folders": _folder_statuses(report.get("folders")),
         }
     )
     if not report["errors"]:
         state["last_success"] = report["finished_at"]
     save_state(state)
     return report
+
+
+def _folder_statuses(folders_report: dict | None) -> list[dict]:
+    if not folders_report or "folders" not in folders_report:
+        return []
+    keep = ("path", "label", "status", "zips_found", "ingested", "skipped",
+            "failed", "errors")
+    return [
+        {key: entry.get(key) for key in keep}
+        for entry in folders_report["folders"]
+    ]
 
 
 def _update_database(conn, log_path=None, newly_logged=0, rebuild=False) -> dict:
@@ -501,8 +700,8 @@ def _update_database(conn, log_path=None, newly_logged=0, rebuild=False) -> dict
     try:
         result = ingest.ingest_document(document, conn)
     except Exception as exc:
-        # Redirect resolution needs the network and a contact email; neither
-        # is worth failing startup over.
+        # Redirect resolution needs the network, which is not worth failing
+        # startup over.
         return {
             "error": f"Ingest into the database failed ({exc}). Visits are "
                      "safe in the append-only log; retry with "
@@ -525,11 +724,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true",
                         help="Sync even if the last one was recent")
     parser.add_argument("--on-launch", action="store_true",
-                        help="Respect the sync_on_launch config gate (run.sh uses this)")
+                        help="Respect the sync.on_launch setting (the launcher uses this)")
     parser.add_argument("--no-drive", action="store_true",
-                        help="Skip Google Drive; read local Chrome only")
+                        help="Skip the Google Drive (OAuth) route")
+    parser.add_argument("--no-folders", action="store_true",
+                        help="Skip watched folders")
     parser.add_argument("--no-local", action="store_true",
-                        help="Skip local Chrome; read Drive only")
+                        help="Skip local Chrome")
     parser.add_argument("--rebuild", action="store_true",
                         help="Re-ingest the whole log into the database")
     parser.add_argument("--quiet", action="store_true",
@@ -558,6 +759,12 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(levelname)s %(message)s",
     )
+
+    # Syncing into the new location while the old log sits unmigrated in the
+    # repo would quietly split the history in two. Say so; never auto-copy.
+    legacy = migrate.legacy_status()
+    if legacy:
+        log.warning(legacy["message"])
 
     if args.import_path:
         try:
@@ -603,6 +810,7 @@ def main(argv: list[str] | None = None) -> int:
         use_drive=not args.no_drive,
         use_local=not args.no_local,
         rebuild=args.rebuild,
+        use_folders=not args.no_folders,
     )
 
     if report["skipped"]:
@@ -611,15 +819,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(_summarize(report))
-    # Exit 0 even on errors: run.sh must go on to start the server. The
-    # errors are in the report, in sync_state.json, and on /health.
+    # Exit 0 even on errors: a handled problem is not a failed step, and the
+    # launcher's job goes on to enrichment either way. The errors are in the
+    # report, in sync_state.json, and on /health.
     return 0
 
 
 def _summarize(report: dict) -> str:
     lines = []
     local = report.get("local")
-    if local:
+    if local and "skipped" in local:
+        lines.append(f"Local Chrome: {local['skipped']}")
+    elif local:
         profiles = ", ".join(
             f"{p.get('display_name') or p['profile']} [{p['profile']}]: "
             f"{p['wikipedia_visits']}"
@@ -629,15 +840,25 @@ def _summarize(report: dict) -> str:
             f"Local Chrome: {local['visits_logged']} new visit(s) logged"
             + (f" from {profiles}" if profiles else "")
         )
+    watched = report.get("folders")
+    if watched and "skipped" not in watched:
+        lines.append(
+            f"Watched folders: {watched['archives_processed']} archive(s) "
+            f"ingested, {watched['archives_skipped']} already processed, "
+            f"{watched['visits_logged']} new visit(s) logged"
+        )
+    elif watched:
+        lines.append(f"Watched folders: {watched['skipped']}")
+
     takeout = report.get("takeout")
     if takeout and "skipped" not in takeout:
         lines.append(
-            f"Takeout: {takeout['archives_processed']} archive(s) ingested, "
+            f"Google Drive: {takeout['archives_processed']} archive(s) ingested, "
             f"{takeout['archives_skipped']} already processed, "
             f"{takeout['visits_logged']} new visit(s) logged"
         )
     elif takeout:
-        lines.append(f"Takeout: {takeout['skipped']}")
+        lines.append(f"Google Drive: {takeout['skipped']}")
 
     ingested = report.get("ingest") or {}
     if "visits_inserted" in ingested:

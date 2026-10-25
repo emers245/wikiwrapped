@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Interactive first-run setup for the Google Takeout integration (D10).
+"""Terminal setup for Wikipedia Wrapped's sources and sync preferences.
 
     python scripts/setup_takeout.py                  # interactive setup
-    python scripts/setup_takeout.py --status         # show current config
+    python scripts/setup_takeout.py --status         # show current settings
     python scripts/setup_takeout.py --authorize EMAIL  # re-authorize one account
-    python scripts/setup_takeout.py --disable        # turn the integration off
+    python scripts/setup_takeout.py --disable        # turn the Drive route off
+    python scripts/setup_takeout.py --add-folder PATH [--label NAME]
+    python scripts/setup_takeout.py --remove-folder PATH
+
+The app window's first-run screens and Settings do the same job; this is
+the terminal front end for developers. Both are thin layers over
+app/setup_service.py, which holds every rule and every check, so the two
+can never disagree. This file only asks questions and prints answers.
 
 Idempotent and re-runnable by design: it loads config.local.toml, changes
 only what you answer, and writes it back. Running it again to add a second
@@ -13,9 +20,10 @@ account or flip a preference never wipes existing settings, tokens, or data.
 What it never does: ask for a Google password. Authorization happens in your
 browser against Google, and the only thing that comes back is a read-only
 OAuth token (drive.readonly), cached under tokens/ with owner-only
-permissions. Both that directory and config.local.toml are git-ignored.
+permissions. That directory and config.local.toml both live in the
+per-user data directory (config.USER_DATA_DIR), not in the repo.
 
-The Google Cloud Console steps you have to do by hand first are in the
+The Google Cloud Console steps for the Advanced Drive route are in the
 README under "Google Takeout integration".
 """
 
@@ -28,8 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config                                    # noqa: E402
-from app import drive, localconfig               # noqa: E402
-from extract import extract_history              # noqa: E402
+from app import localconfig, setup_service       # noqa: E402
 
 
 def ask_yes_no(question: str, default: bool) -> bool:
@@ -56,240 +63,248 @@ def ask_number(question: str, default: float) -> float:
         return default
 
 
+# ---------------------------------------------------------------------------
+# --status
+# ---------------------------------------------------------------------------
+
 def show_status(settings: dict) -> None:
-    takeout = settings.get("takeout", {})
-    accounts = localconfig.account_emails(settings)
-    secret = localconfig.client_secret_path(settings)
+    """Print setup_service.status() for a terminal."""
+    info = setup_service.status(settings)
+    paths, takeout, sync_prefs = info["paths"], info["takeout"], info["sync"]
 
-    print(f"Config file:      {config.LOCAL_CONFIG_PATH}"
-          f"{'' if Path(config.LOCAL_CONFIG_PATH).exists() else '  (not created yet)'}")
-    print(f"Takeout enabled:  {bool(takeout.get('enabled'))}")
-    print(f"Sync on launch:   {bool(takeout.get('sync_on_launch'))}")
-    print(f"Min interval:     {localconfig.min_sync_interval_hours(settings):g} hours")
-    print(f"Client secret:    {secret if secret else 'NOT FOUND'}")
-    print(f"Drive folder:     "
-          f"{localconfig.drive_folder_id(settings) or 'search all of Drive'}")
-    print(f"Google libraries: "
-          f"{'installed' if drive.libraries_available() else 'NOT INSTALLED'}")
+    exists = Path(paths["settings_file"]).exists()
+    print(f"Settings file:    {paths['settings_file']}"
+          f"{'' if exists else '  (not created yet)'}")
+    print(f"Sync on launch:   {sync_prefs['on_launch']}")
+    print(f"Min interval:     {sync_prefs['min_interval_hours']:g} hours")
 
-    chosen = localconfig.chrome_profiles(settings)
-    available = extract_history.find_chrome_profiles()
-    if chosen:
-        matched = extract_history.find_chrome_profiles(only=chosen)
-        label = ", ".join(
-            f"{p['display_name']} [{p['directory']}]" for p in matched
-        ) or "NONE MATCHED"
-        print(f"Chrome profiles:  {label}  (of {len(available)} available)")
+    profiles = setup_service.chrome_profiles(settings, count_visits=False)
+    selected = [p for p in profiles if p["selected"]]
+    if not info["local"]["enabled"]:
+        print(f"Chrome profiles:  none (reading local Chrome is off; "
+              f"{len(profiles)} found)")
+    elif info["local"]["chrome_profiles"]:
+        names = ", ".join(f"{p['display_name']} [{p['directory']}]" for p in selected)
+        print(f"Chrome profiles:  {names or 'NONE MATCHED'}  "
+              f"(of {len(profiles)} available)")
     else:
-        print(f"Chrome profiles:  all ({len(available)} found)")
+        print(f"Chrome profiles:  all ({len(profiles)} found)")
 
-    if accounts:
+    if info["watched_folders"]:
+        print("Watched folders:")
+        for entry in info["watched_folders"]:
+            label = f"  [{entry['label']}]" if entry["label"] else ""
+            print(f"  - {entry['path']}{label}\n      {entry['message']}")
+    else:
+        print("Watched folders:  none")
+
+    print(f"Drive (OAuth):    {'enabled' if takeout['enabled'] else 'disabled'}")
+    print(f"Client secret:    {takeout['client_secret'] or 'NOT FOUND'}")
+    print(f"Drive folder:     {takeout['drive_folder'] or 'search all of Drive'}")
+    print(f"Google libraries: "
+          f"{'installed' if takeout['libraries_available'] else 'NOT INSTALLED'}")
+    if takeout["accounts"]:
         print("Authorized accounts:")
-        for email in accounts:
-            token = localconfig.token_path(email)
-            print(f"  - {email}  "
-                  f"({'token present' if token.exists() else 'TOKEN MISSING, re-authorize'})")
+        for account in takeout["accounts"]:
+            state = ("needs re-authorization" if account["needs_reauthorization"]
+                     else "ok")
+            print(f"  - {account['email']}  ({state})")
     else:
         print("Authorized accounts: none")
     warn_if_incomplete(settings)
 
 
+def warn_if_incomplete(settings: dict) -> None:
+    message = setup_service.incomplete_warning(settings)
+    if message:
+        print("\n" + "!" * 62 + "\n" + message
+              + "\n    python scripts/setup_takeout.py --authorize you@example.com"
+              + "\n    python scripts/setup_takeout.py --disable\n" + "!" * 62)
+
+
+# ---------------------------------------------------------------------------
+# Interactive steps
+# ---------------------------------------------------------------------------
+
 def authorize_one(settings: dict, email_hint: str | None = None) -> str | None:
     """Run the browser OAuth flow and file the token. Returns the email."""
     try:
-        email = drive.authorize_account(settings, email_hint=email_hint)
-    except drive.DriveError as exc:
+        email = setup_service.authorize(settings, email_hint=email_hint)
+    except setup_service.SetupError as exc:
         print(f"\nAuthorization failed: {exc}\n")
         return None
     except KeyboardInterrupt:
         print("\nAuthorization cancelled.\n")
         return None
-    localconfig.add_account(settings, email)
     print(f"Authorized {email}. Token cached at {localconfig.token_path(email)}")
     return email
 
 
-def interactive(settings: dict) -> dict:
-    print("Wikipedia Wrapped: Google Takeout setup")
-    print("=" * 42)
-    print(
-        "\nTakeout exports your Chrome history at the ACCOUNT level, so it\n"
-        "reaches past Chrome's 90-day local limit and includes your phone\n"
-        "and any second Google account. This is added alongside the local\n"
-        "Chrome reader, which keeps working either way.\n"
-    )
-    show_status(settings)
-    print()
-
-    choose_profiles(settings)
-
-    enabled = ask_yes_no(
-        "\nEnable the Google Takeout integration?",
-        default=localconfig.takeout_enabled(settings),
-    )
-    settings.setdefault("takeout", {})["enabled"] = enabled
-
-    if not enabled:
-        settings["takeout"]["sync_on_launch"] = False
-        print("\nTakeout disabled. The local Chrome path is unaffected.")
-        return settings
-
-    if not drive.libraries_available():
-        print(f"\nThe Google libraries are missing.\n{drive.INSTALL_HINT}\n"
-              "Settings will still be saved; install them, then re-run this.")
-
-    if localconfig.client_secret_path(settings) is None:
-        print(
-            "\nNo OAuth client secret found.\n"
-            f"Download the Desktop app client JSON from Google Cloud Console\n"
-            f"into {config.PROJECT_ROOT}\n"
-            f"(the filename matches {config.CLIENT_SECRET_GLOB}, which is\n"
-            "git-ignored). The README lists the console steps.\n"
-        )
-        path = input("Path to the client secret JSON (blank to skip): ").strip()
-        if path:
-            settings["takeout"]["client_secret"] = path
-
-    # Authorize: existing accounts first, then as many new ones as wanted.
-    existing = localconfig.account_emails(settings)
-    if existing:
-        print(f"\nAlready authorized: {', '.join(existing)}")
-    if drive.libraries_available() and localconfig.client_secret_path(settings):
-        prompt = ("Authorize another Google account?" if existing
-                  else "Authorize a Google account now?")
-        while ask_yes_no("\n" + prompt, default=not existing):
-            if authorize_one(settings) is None:
-                if not ask_yes_no("Try again?", default=False):
-                    break
-            prompt = "Authorize another Google account?"
-
-    print(
-        "\nCheck-on-launch sync makes ./run.sh look for a new Takeout archive\n"
-        "before starting the dashboard. It is a single cheap pass, it never\n"
-        "blocks startup, and it early-exits if it ran recently."
-    )
-    settings["takeout"]["sync_on_launch"] = ask_yes_no(
-        "Sync on launch?", default=settings["takeout"].get("sync_on_launch", True)
-    )
-    if settings["takeout"]["sync_on_launch"]:
-        print(
-            "\nTakeout only produces a new archive every ~2 months, so there\n"
-            "is nothing to gain from checking often."
-        )
-        settings["takeout"]["min_sync_interval_hours"] = ask_number(
-            "Minimum hours between syncs?",
-            localconfig.min_sync_interval_hours(settings),
-        )
-
-    current_folder = localconfig.drive_folder_id(settings) or ""
-    print(
-        "\nOptionally restrict the search to one Drive folder. A folder NAME\n"
-        "(like Takeout) or the ID from its URL both work; blank searches all\n"
-        "of Drive, which is usually what you want."
-    )
-    folder = input(
-        f"Drive folder name or ID [{current_folder or 'search all'}]: "
-    ).strip()
-    if folder:
-        settings["takeout"]["drive_folder_id"] = folder
-
-    return settings
-
-
 def choose_profiles(settings: dict) -> dict:
     """Pick which local Chrome profiles to read. Defaults to all of them."""
-    profiles = extract_history.find_chrome_profiles()
+    profiles = setup_service.chrome_profiles(settings)
     if not profiles:
         print("\nNo local Chrome profile with a History database was found.")
         return settings
 
     print("\nLocal Chrome profiles")
     print("-" * 42)
-    counts = {}
     for index, profile in enumerate(profiles, 1):
-        try:
-            rows = extract_history.load_chrome_db(profile["path"])
-            _visits, stats = extract_history.build_visits(rows)
-            kept = stats["kept"]
-        except Exception:
-            kept = None
-        counts[profile["directory"]] = kept
-        shown = "unreadable" if kept is None else f"{kept} Wikipedia visits"
+        visits = profile["wikipedia_visits"]
+        shown = ("unreadable" if visits is None
+                 else f"{visits} Wikipedia visits still in Chrome")
         account = f"  {profile['account']}" if profile["account"] else ""
         print(f"  {index}. {profile['display_name']} "
               f"[{profile['directory']}]{account}\n     {shown}")
 
-    selected = localconfig.chrome_profiles(settings)
-    if selected:
-        print(f"\nCurrently reading only: {', '.join(selected)}")
-    else:
-        print("\nCurrently reading: all profiles")
+    if ask_yes_no("\nRead all profiles?",
+                  default=all(p["selected"] for p in profiles)):
+        return setup_service.set_profiles(settings, None)
 
-    if ask_yes_no("\nRead all profiles?", default=not selected):
-        settings.setdefault("local", {})["chrome_profiles"] = []
-        return settings
-
-    print("\nEnter the numbers to include, separated by commas (e.g. 2,3).")
+    print("\nEnter the numbers to include, separated by commas (e.g. 2,3),")
+    print("or 0 to read no local Chrome profile at all.")
     while True:
-        answer = input("Profiles to include: ").strip()
+        answer = input("Profiles to include: ").strip().replace(" ", "")
         if not answer:
-            print("Nothing selected; keeping all profiles.")
-            settings.setdefault("local", {})["chrome_profiles"] = []
-            return settings
+            print("Nothing entered; keeping all profiles.")
+            return setup_service.set_profiles(settings, None)
+        if answer == "0":
+            return setup_service.set_profiles(settings, [])
         try:
-            picked = [
-                profiles[int(part) - 1]
-                for part in answer.replace(" ", "").split(",")
-                if part
-            ]
+            picked = [profiles[int(part) - 1] for part in answer.split(",") if part]
         except (ValueError, IndexError):
-            print(f"Please enter numbers between 1 and {len(profiles)}.")
+            print(f"Please enter numbers between 1 and {len(profiles)}, or 0.")
             continue
         # Store the directory name: display names can be renamed in Chrome.
-        settings.setdefault("local", {})["chrome_profiles"] = [
-            profile["directory"] for profile in picked
-        ]
-        total = sum(
-            counts.get(p["directory"]) or 0 for p in picked
-        )
-        print("Reading: "
-              + ", ".join(f"{p['display_name']} [{p['directory']}]" for p in picked)
-              + f"  ({total} Wikipedia visits)")
+        return setup_service.set_profiles(settings, [p["directory"] for p in picked])
+
+
+def choose_folders(settings: dict) -> dict:
+    """Add watched folders (Takeout zips on this computer, no sign-in)."""
+    current = localconfig.watched_folders(settings)
+    print(
+        "\nWatched folders hold Google Takeout zips: downloaded by hand, or\n"
+        "synced by Google Drive for desktop. No Google sign-in is needed."
+    )
+    for entry in current:
+        print(f"  - {entry['path']}" + (f"  [{entry['label']}]" if entry["label"] else ""))
+    while ask_yes_no("Add a watched folder?", default=not current):
+        path = input("Folder path: ").strip()
+        if not path:
+            continue
+        label = input("Label (e.g. Personal, or your Google email; optional): ").strip()
+        try:
+            setup_service.add_folder(settings, path, label)
+        except setup_service.SetupError as exc:
+            print(f"Not added: {exc}")
+            continue
+        print(setup_service.inspect_folder(path)["message"])
+    return settings
+
+
+def ask_sync_preferences(settings: dict) -> dict:
+    """Sync-on-launch covers every source, so it is asked either way."""
+    print(
+        "\nCheck-on-launch sync reads local Chrome, any watched folders, and\n"
+        "Drive (if enabled) when the app starts. It is a single cheap pass,\n"
+        "it never blocks startup, and it early-exits if it ran recently.\n"
+        "Chrome forgets history after about 90 days, so leaving it on is\n"
+        "what keeps the local history from expiring uncaptured."
+    )
+    on_launch = ask_yes_no("Sync on launch?", default=localconfig.sync_on_launch(settings))
+    interval = localconfig.min_sync_interval_hours(settings)
+    if on_launch:
+        interval = ask_number("Minimum hours between syncs?", interval)
+    try:
+        return setup_service.set_sync(settings, on_launch, interval)
+    except setup_service.SetupError as exc:
+        print(f"{exc} Keeping the previous value.")
         return settings
 
 
-def warn_if_incomplete(settings: dict) -> None:
-    """Say plainly when the saved config cannot actually sync anything.
-
-    Enabling Takeout without finishing authorization is easy to do (the OAuth
-    flow can be cancelled or fail), and it produces a config that looks set up
-    but does nothing except warn on every sync.
-    """
-    if not localconfig.takeout_enabled(settings):
-        return
-    if localconfig.account_emails(settings):
-        return
-    print(
-        "\n" + "!" * 62
-        + "\nTakeout is ENABLED but NO ACCOUNT IS AUTHORIZED, so syncing will"
-        + "\nfind nothing and warn every time. Authorize an account with:"
-        + "\n    python scripts/setup_takeout.py --authorize you@example.com"
-        + "\nor turn the integration off with:"
-        + "\n    python scripts/setup_takeout.py --disable"
-        + "\n" + "!" * 62
+def choose_drive(settings: dict) -> dict:
+    """The Advanced route: Drive through the user's own OAuth client."""
+    enabled = ask_yes_no(
+        "\nUse the Advanced Google Drive route (your own OAuth client)?",
+        default=localconfig.takeout_enabled(settings),
     )
+    setup_service.set_drive(settings, enabled)
+    if not enabled:
+        return settings
 
+    if localconfig.client_secret_path(settings) is None:
+        print(
+            "\nNo OAuth client secret found. Download the Desktop app client\n"
+            "JSON from Google Cloud Console (the README lists the steps)."
+        )
+        path = input("Path to the client secret JSON (blank to skip): ").strip()
+        if path:
+            try:
+                setup_service.import_client_secret(settings, path)
+                print(f"Copied to {config.USER_DATA_DIR}.")
+            except setup_service.SetupError as exc:
+                print(f"Not imported: {exc}")
+
+    existing = localconfig.account_emails(settings)
+    if existing:
+        print(f"\nAlready authorized: {', '.join(existing)}")
+    if localconfig.client_secret_path(settings):
+        prompt = ("Authorize another Google account?" if existing
+                  else "Authorize a Google account now?")
+        while ask_yes_no("\n" + prompt, default=not existing):
+            if authorize_one(settings) is None and not ask_yes_no(
+                    "Try again?", default=False):
+                break
+            prompt = "Authorize another Google account?"
+
+    current = localconfig.drive_folder_id(settings) or ""
+    print(
+        "\nOptionally restrict the search to one Drive folder. A folder NAME\n"
+        "(like Takeout) or the ID from its URL both work; blank searches all\n"
+        "of Drive, which is usually what you want."
+    )
+    folder = input(f"Drive folder name or ID [{current or 'search all'}]: ").strip()
+    if folder:
+        setup_service.set_drive(settings, True, folder)
+    return settings
+
+
+def interactive(settings: dict) -> dict:
+    print("Wikipedia Wrapped: setup")
+    print("=" * 42)
+    print(
+        "\nLocal Chrome history is read directly. Google Takeout adds history\n"
+        "at the ACCOUNT level, so it reaches past Chrome's 90-day limit and\n"
+        "includes your phone and any second Google account.\n"
+    )
+    show_status(settings)
+    choose_profiles(settings)
+    choose_folders(settings)
+    choose_drive(settings)
+    ask_sync_preferences(settings)
+    return settings
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Set up the read-only Google Takeout integration."
+        description="Set up Wikipedia Wrapped's history sources and sync."
     )
     parser.add_argument("--status", action="store_true",
-                        help="Print the current configuration and exit")
+                        help="Print the current settings and exit")
     parser.add_argument("--authorize", metavar="EMAIL", default=None,
                         help="Re-run the OAuth flow for one account")
     parser.add_argument("--disable", action="store_true",
-                        help="Turn the integration off (keeps tokens and data)")
+                        help="Turn the Drive integration off (keeps tokens and data)")
+    parser.add_argument("--add-folder", metavar="PATH", default=None,
+                        help="Watch a folder for Takeout zips (no sign-in needed)")
+    parser.add_argument("--label", default="",
+                        help="Label for --add-folder, e.g. Personal or an email")
+    parser.add_argument("--remove-folder", metavar="PATH", default=None,
+                        help="Stop watching a folder (its zips are left alone)")
     args = parser.parse_args(argv)
 
     settings = localconfig.load()
@@ -298,18 +313,30 @@ def main(argv: list[str] | None = None) -> int:
         show_status(settings)
         return 0
 
-    if args.disable:
-        settings.setdefault("takeout", {})["enabled"] = False
-        settings["takeout"]["sync_on_launch"] = False
+    if args.add_folder or args.remove_folder:
+        try:
+            if args.add_folder:
+                setup_service.add_folder(settings, args.add_folder, args.label)
+            if args.remove_folder:
+                localconfig.remove_folder(settings, args.remove_folder)
+        except setup_service.SetupError as exc:
+            print(exc, file=sys.stderr)
+            return 1
         path = localconfig.save(settings)
-        print(f"Takeout integration disabled. Wrote {path}")
+        print(f"Wrote {path}")
+        show_status(settings)
+        return 0
+
+    if args.disable:
+        setup_service.set_drive(settings, False)
+        path = localconfig.save(settings)
+        print(f"Drive integration disabled. Wrote {path}")
         print("Tokens and the visit log were left untouched.")
         return 0
 
     if args.authorize:
         if authorize_one(settings, email_hint=args.authorize) is None:
             return 1
-        settings.setdefault("takeout", {})["enabled"] = True
         path = localconfig.save(settings)
         print(f"Wrote {path}")
         return 0
@@ -324,9 +351,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nWrote {path}")
     warn_if_incomplete(settings)
     print("\nNext:")
-    print("  python -m app.sync --force     sync now")
-    print("  ./run.sh                       launch (syncs first)")
-    print("  ./run.sh --no-sync             launch without syncing")
+    print("  python -m app.sync --force         sync now")
+    print("  python -m app.launcher             launch (syncs in the background)")
+    print("  python -m app.launcher --no-sync   launch without syncing")
     return 0
 
 

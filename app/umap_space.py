@@ -2,7 +2,8 @@
 S7.5, D4).
 
 The reference space is fitted ONCE by scripts/build_reference_space.py and
-persisted to data/reference/; this module only loads the frozen reducer
+persisted as a read-only app resource (config.REFERENCE_DIR, data/reference/
+in a dev checkout); this module only loads the frozen reducer
 and .transform()s visited-article embeddings into it - never refits, which
 is what makes layouts reproducible across runs. Coordinates land in
 umap_coords.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pickle
 import sqlite3
 from pathlib import Path
@@ -52,8 +54,30 @@ def _artifact(reference_dir: str | Path | None, name: str) -> Path:
 
 
 def load_reducer(reference_dir: str | Path | None = None):
+    """Unpickle the frozen reducer.
+
+    Unpickling imports umap, which JIT-compiles with numba, and numba writes
+    its compile cache next to the library's own source files by default. In
+    an installed app that folder is read-only, so the cache is pointed at
+    the user-data dir first. setdefault leaves a developer's own setting
+    alone, and it is done here, at the one place numba is triggered, rather
+    than at import time.
+    """
+    numba_cache = Path(config.CACHE_DIR) / "numba"
+    if "NUMBA_CACHE_DIR" not in os.environ:
+        numba_cache.mkdir(parents=True, exist_ok=True)
+        os.environ["NUMBA_CACHE_DIR"] = str(numba_cache)
     with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle:
-        return pickle.load(handle)
+        reducer = pickle.load(handle)
+    # The build fits with verbose=True for its own console, and that choice
+    # is pickled with the reducer twice over: the verbose flag (epoch
+    # counters) and tqdm_kwds["disable"], which umap fills in from it at fit
+    # time (the progress bar). Left on, every transform would print both
+    # into the app log.
+    reducer.verbose = False
+    if isinstance(getattr(reducer, "tqdm_kwds", None), dict):
+        reducer.tqdm_kwds["disable"] = True
+    return reducer
 
 
 def load_points(reference_dir: str | Path | None = None) -> list[dict]:

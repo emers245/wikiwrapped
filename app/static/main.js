@@ -317,6 +317,168 @@ window.WW = (function () {
       requestAnimationFrame(() => document.body.classList.remove("no-anim")));
   })();
 
+  /* -- background jobs ----------------------------------------------------- */
+  /* The launcher syncs and enriches AFTER the window opens (app/jobs.py),
+     so the dashboard first shows whatever data already exists and this
+     strip reports the job. When it finishes, /health is compared with what
+     was loaded: an empty dashboard reloads by itself, a populated one
+     offers a Reload button rather than yanking away the user's view. */
+  const POLL_RUNNING_MS = 1000;
+  const POLL_IDLE_MS = 5000;
+  const strip = document.getElementById("job-strip");
+  const jobMessage = document.getElementById("job-message");
+  const jobBar = document.getElementById("job-bar");
+  const jobFill = document.getElementById("job-bar-fill");
+  const jobCount = document.getElementById("job-count");
+  const jobReload = document.getElementById("job-reload");
+  const jobSettings = document.getElementById("job-settings");
+  const jobDismiss = document.getElementById("job-dismiss");
+  let pollTimer = null;
+  const REPORTED_KEY = "ww.reportedJob";
+  let lastJobId = null;      // the job last seen running
+  /* The job whose result was already shown. Kept in sessionStorage so the
+     Reload button does not bring the same report straight back; a new
+     window is a new session, so a fresh launch still reports its job. */
+  let reported = null;
+  try {
+    reported = JSON.parse(sessionStorage.getItem(REPORTED_KEY));
+  } catch (err) {
+    /* storage unavailable: at worst a report shows twice */
+  }
+
+  function markReported(id) {
+    reported = id;
+    try {
+      sessionStorage.setItem(REPORTED_KEY, JSON.stringify(id));
+    } catch (err) {
+      /* see above */
+    }
+  }
+
+  jobReload.addEventListener("click", () => location.reload());
+  jobDismiss.addEventListener("click", () => strip.classList.add("hidden"));
+  jobSettings.addEventListener("click", () => {
+    strip.classList.add("hidden");
+    if (window.WWsetup) WWsetup.open("settings");
+  });
+
+  function showRunning(job) {
+    strip.classList.remove("hidden", "problem");
+    jobReload.classList.add("hidden");
+    jobSettings.classList.add("hidden");
+    jobDismiss.classList.add("hidden");
+    const step = job.steps > 1 ? ` (step ${job.step_index} of ${job.steps})` : "";
+    jobMessage.textContent = (job.message || job.step || "Working") + step;
+    const counted = job.total !== null && job.total > 0;
+    jobBar.classList.remove("hidden");
+    jobBar.classList.toggle("indeterminate", !counted);
+    jobFill.style.width = counted
+      ? Math.round(100 * job.done / job.total) + "%" : "";
+    jobCount.textContent = counted ? `${job.done} / ${job.total}` : "";
+  }
+
+  /* What changed since the dashboard was loaded. Visits are what a sync
+     adds; topics and coordinates are what enrichment adds. */
+  function dataChanged(health) {
+    const loaded = state.loaded;
+    if (!loaded) return false;
+    const gaps = health.enrichment || {};
+    return health.visits !== loaded.visits ||
+      (gaps.topics_missing ?? loaded.unlabeled) < loaded.unlabeled ||
+      (gaps.coords_missing ?? loaded.noCoords) < loaded.noCoords;
+  }
+
+  /* Problems in the user's terms. The sync's own messages are written for
+     a terminal ("Run: python scripts/setup_takeout.py --authorize ..."),
+     so an account that needs signing in again is described here instead,
+     and the raw duplicate is dropped. */
+  function describeProblems(job, health) {
+    const sync = (health && health.sync) || { errors: [], reauthorize: [] };
+    const out = sync.reauthorize.map(email =>
+      `Google account ${email} needs you to sign in again (Settings)`);
+    for (const message of [...job.errors, ...sync.errors]) {
+      if (!message.startsWith("Re-authorization needed")) out.push(message);
+    }
+    return out;
+  }
+
+  async function showFinished(job) {
+    await booted;            // the comparison needs the loaded dashboard
+    let health = null;
+    try {
+      health = await (await fetch("/health")).json();
+    } catch (err) {
+      /* the strip still reports the job; there is just nothing to compare */
+    }
+    const problems = describeProblems(job, health);
+    const changed = health !== null && dataChanged(health);
+
+    if (changed && state.loaded && state.loaded.empty) {
+      location.reload();
+      return;
+    }
+    jobBar.classList.add("hidden");
+    jobCount.textContent = "";
+    strip.classList.toggle("problem", problems.length > 0);
+    if (problems.length) {
+      jobMessage.textContent = `Sync finished with ${problems.length} ` +
+        `problem${problems.length === 1 ? "" : "s"}` +
+        (changed ? "; new data are ready" : "");
+      jobMessage.title = problems.join("\n");
+    } else {
+      jobMessage.textContent = changed ? "New data are ready" : "Up to date";
+      jobMessage.title = "";
+    }
+    jobReload.classList.toggle("hidden", !changed);
+    jobSettings.classList.toggle("hidden", !problems.length);
+    jobDismiss.classList.remove("hidden");
+    strip.classList.remove("hidden");
+    if (!changed && !problems.length) {
+      setTimeout(() => strip.classList.add("hidden"), 3000);
+    }
+  }
+
+  async function pollJobs() {
+    let job = null;
+    try {
+      job = await (await fetch("/jobs")).json();
+    } catch (err) {
+      schedulePoll(POLL_IDLE_MS);   // server busy or restarting
+      return;
+    }
+    if (job.status === "running") {
+      lastJobId = job.id;
+      showRunning(job);
+      schedulePoll(POLL_RUNNING_MS);
+      return;
+    }
+    /* Report a job once, and only one this page saw running, or one that
+       finished between the page loading and the first poll (the launch
+       job when nothing needed doing). */
+    const finished = job.status === "done" || job.status === "failed";
+    // Job ids restart with each server, so the start time is part of the key.
+    const key = `${job.id}@${job.started_at}`;
+    if (finished && key !== reported &&
+        (job.id === lastJobId || lastJobId === null)) {
+      markReported(key);
+      showFinished(job);
+    }
+    lastJobId = job.id;
+    schedulePoll(POLL_IDLE_MS);
+  }
+
+  /* One timer, so pollJobsNow() (called when setup starts a sync) cannot
+     leave two polling loops running side by side. */
+  function schedulePoll(delay) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollJobs, delay);
+  }
+
+  function pollJobsNow() {
+    clearTimeout(pollTimer);
+    pollJobs();
+  }
+
   /* -- boot ---------------------------------------------------------------- */
   /* Every exit from boot() has to reach this, including the failures:
      an overlay that is never dismissed is a worse outcome than the frozen
@@ -353,10 +515,33 @@ window.WW = (function () {
     });
     state.topicColors["Unclassified"] = UNCLASSIFIED_COLOR;
 
+    /* Snapshot of what this page shows, for the job strip's "did anything
+       change?" check once a background sync or enrichment finishes. */
+    state.loaded = {
+      // Unfiltered, like /health's count, so hiding accounts is never
+      // mistaken for new data arriving.
+      visits: data.filter ? data.filter.visits_all : data.summary.total_visits,
+      unlabeled: data.stats.topics.pages_unlabeled || 0,
+      noCoords: data.pages.filter(p => p.x === null || p.x === undefined).length,
+      empty: !data.pages.length,
+    };
+
+    const hidden = (data.filter && data.filter.hidden_accounts) || [];
+    if (hidden.length) {
+      const note = document.getElementById("filter-note");
+      note.textContent = `Hiding ${hidden.length} account${hidden.length === 1 ? "" : "s"}`;
+      note.title = "Hidden from the dashboard: " +
+        hidden.map(a => a === "" ? "no account recorded" : a).join(", ") +
+        ". Click to choose in Settings.";
+      note.classList.remove("hidden");
+      note.addEventListener("click", () => window.WWsetup && WWsetup.open("settings"));
+    }
+
     const s = data.summary;
-    document.getElementById("summary-line").textContent =
-      `${s.unique_pages} pages | ${s.total_visits} visits | ` +
-      `${(s.first_visit || "").slice(0, 10)} to ${(s.last_visit || "").slice(0, 10)}`;
+    document.getElementById("summary-line").textContent = s.total_visits
+      ? `${s.unique_pages} pages | ${s.total_visits} visits | ` +
+        `${(s.first_visit || "").slice(0, 10)} to ${(s.last_visit || "").slice(0, 10)}`
+      : "No history yet";
 
     /* Enrichment is a separate pass from ingestion, so a fresh import can
        leave most of the history with no topic and no coordinates - which
@@ -371,14 +556,21 @@ window.WW = (function () {
       if (unlabeled) parts.push(`${unlabeled} pages have no topic yet`);
       if (noCoords) parts.push(`${noCoords} are missing map coordinates`);
       const warning = document.getElementById("data-warning");
-      warning.textContent = parts.join(", ") + " - run POST /enrich";
+      // The launcher enriches in the background after every sync, so this
+      // is a "still catching up" note rather than an instruction.
+      warning.textContent = parts.join(", ") +
+        " - they are added in the background after a sync";
       warning.classList.remove("hidden");
     }
 
     if (!data.pages.length) {
-      document.getElementById("viz-message").textContent =
-        "No history ingested yet - run the extractor, then POST /ingest " +
-        "and /enrich.";
+      document.getElementById("viz-message").textContent = hidden.length &&
+        data.filter.visits_all
+        ? "Every account with history is hidden from the dashboard. " +
+          "Choose which to show in Settings."
+        : "No reading history yet. It is read from Chrome (and any Takeout " +
+          "folders) when the app syncs; the dashboard fills in when a sync " +
+          "finishes. Sources and syncing are in Settings.";
       document.getElementById("viz-message").classList.remove("hidden");
       btnUmap.disabled = btnNet.disabled = true;
       finishLaunch();
@@ -409,14 +601,16 @@ window.WW = (function () {
       });
     } else {
       btnUmap.disabled = true;
-      btnUmap.title = "Run scripts/build_reference_space.py and POST " +
-        "/enrich to enable the UMAP view";
+      btnUmap.title = data.reference === null
+        ? "The map's reference space is not installed"
+        : "Map positions are still being added; they appear after the " +
+          "background enrichment finishes";
       setMode("network");   // builds the graph synchronously
       finishLaunch();
     }
   }
 
-  boot().catch(error => {
+  const booted = boot().catch(error => {
     // Without this the overlay would sit on "Launching..." forever, hiding
     // the one thing worth reporting.
     const message = document.getElementById("viz-message");
@@ -424,8 +618,10 @@ window.WW = (function () {
     message.classList.remove("hidden");
     finishLaunch();
   });
+  pollJobs();
 
   return { state, colorFor, hexToRgba, pageUrl, esc, topicLabel, GREY,
            showPopup, scheduleHidePopup, highlight,
-           filters, setFilter, pageGreyed, pageVisible, topicGreyed };
+           filters, setFilter, pageGreyed, pageVisible, topicGreyed,
+           pollJobsNow };
 })();

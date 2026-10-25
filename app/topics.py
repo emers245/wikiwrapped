@@ -70,11 +70,15 @@ def label_titles(
     titles: list[str],
     session=None,
     progress: bool = False,
+    on_progress=None,
 ) -> dict:
     """Fetch and cache topics for every given title missing a cache row
     (D6). Used for visited pages and for the reference sample, which share
     one topic_cache. Commits after each title so an interrupted run keeps
-    its progress."""
+    its progress.
+
+    progress draws a tqdm bar (terminal use); on_progress(done, total), if
+    given, is called after each title (the app window's progress strip)."""
     cached = storage.get_topic_cache(conn)
     unique = list(dict.fromkeys(t for t in titles if t))
     todo = [t for t in unique if t not in cached]
@@ -98,17 +102,21 @@ def label_titles(
             storage.upsert_topic(conn, title, macro(raw_label), raw_label)
             report["labeled"] += 1
         conn.commit()
+        if on_progress is not None:
+            on_progress(index + 1, len(todo))
         if index < len(todo) - 1:
             time.sleep(config.THROTTLE_S)
     return report
 
 
 def label_pages(
-    conn: sqlite3.Connection, session=None, progress: bool = False
+    conn: sqlite3.Connection, session=None, progress: bool = False,
+    on_progress=None,
 ) -> dict:
     """Label every visited page missing a topic (the /enrich entry point)."""
     report = label_titles(
-        conn, storage.all_page_titles(conn), session, progress=progress
+        conn, storage.all_page_titles(conn), session, progress=progress,
+        on_progress=on_progress,
     )
     return {
         "pages_labeled": report["labeled"],

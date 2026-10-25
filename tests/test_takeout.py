@@ -150,9 +150,12 @@ def test_extractor_cli_detects_a_zip_by_magic(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_missing_config_defaults_to_disabled(tmp_path):
+    """Drive stays opt-in, but launch sync is on: local Chrome history
+    expires after ~90 days, and launching is when it gets captured."""
     settings = localconfig.load(tmp_path / "absent.toml")
     assert localconfig.takeout_enabled(settings) is False
-    assert localconfig.sync_on_launch(settings) is False
+    assert localconfig.sync_on_launch(settings) is True
+    assert localconfig.watched_folders(settings) == []
     assert localconfig.account_emails(settings) == []
 
 
@@ -160,8 +163,7 @@ def test_config_roundtrips_through_save_and_load(tmp_path):
     path = tmp_path / "config.local.toml"
     settings = localconfig.load(path)
     settings["takeout"]["enabled"] = True
-    settings["takeout"]["sync_on_launch"] = True
-    settings["takeout"]["min_sync_interval_hours"] = 12
+    localconfig.set_sync_preferences(settings, on_launch=True, min_interval_hours=12)
     localconfig.add_account(settings, "a@example.com")
     localconfig.add_account(settings, "b@example.com")
     localconfig.save(settings, path)
@@ -205,10 +207,13 @@ def test_remove_account(tmp_path):
     assert localconfig.account_emails(settings) == ["b@example.com"]
 
 
-def test_sync_on_launch_requires_takeout_enabled(tmp_path):
+def test_sync_on_launch_is_independent_of_the_drive_route(tmp_path):
+    """It used to require takeout.enabled, which silently stopped local
+    Chrome from ever syncing on launch for anyone without Drive set up."""
     settings = localconfig.load(tmp_path / "absent.toml")
-    settings["takeout"]["sync_on_launch"] = True
     settings["takeout"]["enabled"] = False
+    assert localconfig.sync_on_launch(settings) is True
+    localconfig.set_sync_preferences(settings, on_launch=False)
     assert localconfig.sync_on_launch(settings) is False
 
 
@@ -351,14 +356,15 @@ def test_sync_reports_when_no_account_is_authorized(scratch, monkeypatch):
 
 
 def test_launch_gate_skips_when_configured_off(scratch):
+    settings = localconfig.set_sync_preferences(disabled_settings(), on_launch=False)
     report = sync.run(
         db_path=scratch / "app.db",
-        settings=disabled_settings(),
+        settings=settings,
         log_path=scratch / "visits.jsonl",
         on_launch=True,
     )
     assert report["skipped"] is True
-    assert "sync_on_launch" in report["reason"]
+    assert "on_launch" in report["reason"]
 
 
 def test_recent_sync_early_exits(scratch, monkeypatch):
@@ -587,3 +593,80 @@ def test_archive_processed_once_then_skipped(scratch):
         assert storage.processed_archives(conn)[0]["visits_extracted"] == 42
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Drive listing: only real archives count
+# ---------------------------------------------------------------------------
+
+class _FakeDriveFiles:
+    """Just enough of service.files().list(...).execute() for one page."""
+
+    def __init__(self, files):
+        self.files_ = files
+        self.queries = []
+
+    def files(self):
+        return self
+
+    def list(self, q, **kwargs):
+        self.queries.append(q)
+        # Honor the folder exclusion the way Drive would.
+        shown = [f for f in self.files_
+                 if not ("mimeType != 'application/vnd.google-apps.folder'" in q
+                         and f["mimeType"] == drive.FOLDER_MIME_TYPE)]
+        return _FakeExecute({"files": shown})
+
+
+class _FakeExecute:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def execute(self):
+        return self.payload
+
+
+def test_the_takeout_folder_is_not_reported_as_a_skipped_archive(monkeypatch, caplog):
+    """Takeout delivers into a Drive folder named "Takeout", which a name
+    search also matches; it used to be reported as a skipped non-zip file
+    with advice to change the export format."""
+    if not drive.libraries_available():
+        pytest.skip("google libraries not installed")
+    fake = _FakeDriveFiles([
+        {"id": "f", "name": "Takeout", "mimeType": drive.FOLDER_MIME_TYPE},
+        {"id": "a", "name": "takeout-20261009T034829Z-001.zip", "mimeType": "application/x-zip"},
+        {"id": "b", "name": "takeout-20261009T034829Z-1-001.zip", "mimeType": "application/x-zip"},
+        {"id": "c", "name": "takeout-20261009T034829Z-002.tgz", "mimeType": "application/x-gzip"},
+    ])
+    monkeypatch.setattr(drive, "_service", lambda creds: fake)
+
+    with caplog.at_level("INFO", logger="app.drive"):
+        archives = drive.list_takeout_archives(creds=None)
+
+    assert [a["id"] for a in archives] == ["a", "b"]
+    assert "mimeType != 'application/vnd.google-apps.folder'" in fake.queries[0]
+    skipped = [r.getMessage() for r in caplog.records if "non-zip" in r.getMessage()]
+    assert skipped == ["Skipped 1 non-zip Takeout file(s); set the export format "
+                       "to .zip in Takeout for these to be ingested."]
+
+
+def test_a_folder_returned_anyway_is_still_not_an_archive(monkeypatch, caplog):
+    """Belt and braces: even if Drive ignored the query clause, a folder
+    must neither be listed nor counted as a skipped file."""
+    if not drive.libraries_available():
+        pytest.skip("google libraries not installed")
+
+    class IgnoresClause(_FakeDriveFiles):
+        def list(self, q, **kwargs):
+            self.queries.append(q)
+            return _FakeExecute({"files": self.files_})
+
+    fake = IgnoresClause([
+        {"id": "f", "name": "Takeout", "mimeType": drive.FOLDER_MIME_TYPE},
+        {"id": "a", "name": "takeout-1.zip", "mimeType": "application/x-zip"},
+    ])
+    monkeypatch.setattr(drive, "_service", lambda creds: fake)
+    with caplog.at_level("INFO", logger="app.drive"):
+        archives = drive.list_takeout_archives(creds=None)
+    assert [a["id"] for a in archives] == ["a"]
+    assert not any("non-zip" in r.getMessage() for r in caplog.records)

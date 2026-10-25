@@ -14,7 +14,7 @@ Boundaries this module holds to:
   is the user's decision, made by hand in Drive.
 - No passwords, ever. The app never asks for, receives, stores, or transmits
   a Google password. The only credential it holds is an OAuth token, cached
-  per account under tokens/ (git-ignored).
+  per account under tokens/ in the user-data dir.
 - No parsing. Archives are handed to extract/extract_history.py, which owns
   every browser-specific format (repo_spec D1). This module is pure I/O.
 
@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 # Drive returns pages of results; Takeout folders are small, but a user with
 # many archives should still enumerate correctly.
 PAGE_SIZE = 100
+
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
 INSTALL_HINT = (
     "Google Drive support needs three extra packages:\n"
@@ -144,20 +146,28 @@ def load_credentials(email: str, settings: dict | None = None):
     return creds
 
 
-def authorize_account(settings: dict, email_hint: str | None = None) -> str:
+def authorize_account(
+    settings: dict,
+    email_hint: str | None = None,
+    timeout_seconds: float | None = None,
+) -> str:
     """Run the interactive installed-app OAuth flow; returns the account email.
 
     Opens a local-server callback (the Desktop app client type). The email is
     read back from Drive rather than trusted from user input, so the token
     filename always matches the account that actually authorized.
+
+    timeout_seconds bounds the wait for the browser to come back. The app
+    window calls this from a request handler, and a sign-in the user
+    abandons must not hold that request (and a server thread) forever.
     """
     google = _google_modules()
     secret = localconfig.client_secret_path(settings)
     if secret is None:
         raise DriveError(
             "No OAuth client secret found. Download the Desktop app client "
-            f"JSON from Google Cloud Console into {config.PROJECT_ROOT} "
-            f"(it matches {config.CLIENT_SECRET_GLOB} and is git-ignored), "
+            f"JSON from Google Cloud Console into {config.USER_DATA_DIR} "
+            f"(the filename must match {config.CLIENT_SECRET_GLOB}), "
             "or set takeout.client_secret in config.local.toml. "
             "The README has the console steps."
         )
@@ -166,19 +176,32 @@ def authorize_account(settings: dict, email_hint: str | None = None) -> str:
         str(secret), config.DRIVE_SCOPES
     )
     # port=0 lets the OS pick a free port for the loopback redirect.
-    creds = flow.run_local_server(
-        port=0,
-        prompt="consent",          # force a refresh token to be issued
-        access_type="offline",
-        authorization_prompt_message=(
-            "Opening a browser to authorize read-only Drive access"
-            + (f" for {email_hint}" if email_hint else "")
-            + ".\nIf it does not open, visit:\n    {url}"
-        ),
-        success_message=(
-            "Authorized. You can close this tab and return to the terminal."
-        ),
-    )
+    try:
+        creds = flow.run_local_server(
+            port=0,
+            prompt="consent",          # force a refresh token to be issued
+            access_type="offline",
+            timeout_seconds=timeout_seconds,
+            authorization_prompt_message=(
+                "Opening a browser to authorize read-only Drive access"
+                + (f" for {email_hint}" if email_hint else "")
+                + ".\nIf it does not open, visit:\n    {url}"
+            ),
+            success_message=(
+                "Authorized. You can close this tab and return to "
+                "Wikipedia Wrapped."
+            ),
+        )
+    except Exception as exc:
+        # A timeout surfaces from the library as an AttributeError on the
+        # missing redirect, a refusal as an OAuth error; to the user both
+        # mean the same thing.
+        raise DriveError(
+            "Authorization was not completed in the browser"
+            + (f" (no response within {timeout_seconds:.0f} seconds)"
+               if timeout_seconds else "")
+            + f". Details: {exc}"
+        ) from exc
 
     email = _account_email(creds) or (email_hint or "").strip()
     if not email:
@@ -243,7 +266,7 @@ def resolve_folder_id(creds, value: str | None) -> str | None:
         found = service.files().get(
             fileId=value, fields="id, mimeType"
         ).execute()
-        if found.get("mimeType") == "application/vnd.google-apps.folder":
+        if found.get("mimeType") == FOLDER_MIME_TYPE:
             return found["id"]
         log.warning("Drive item %s is not a folder; ignoring the setting.", value)
         return None
@@ -257,7 +280,7 @@ def resolve_folder_id(creds, value: str | None) -> str | None:
         response = (
             service.files()
             .list(
-                q="mimeType = 'application/vnd.google-apps.folder' "
+                q=f"mimeType = '{FOLDER_MIME_TYPE}' "
                   f"and name = '{escaped}' and trashed = false",
                 spaces="drive",
                 fields="files(id, name)",
@@ -299,6 +322,11 @@ def list_takeout_archives(creds, folder_id: str | None = None) -> list[dict]:
     clauses = [
         "trashed = false",
         f"name contains '{config.TAKEOUT_NAME_PATTERN}'",
+        # Takeout delivers into a Drive FOLDER named "Takeout", which the
+        # name match above also finds. Without this clause it was counted as
+        # a skipped non-zip archive, and the sync told the user to change
+        # their export format for no reason.
+        f"mimeType != '{FOLDER_MIME_TYPE}'",
     ]
     if folder_id:
         clauses.append(f"'{folder_id}' in parents")
@@ -330,6 +358,10 @@ def list_takeout_archives(creds, folder_id: str | None = None) -> list[dict]:
         raise DriveError(f"Could not list Drive files: {exc}") from exc
 
     # Takeout can deliver .tgz too; only .zip is supported by the extractor.
+    # Folders are excluded by the query; this second check keeps a folder
+    # out even if Drive ever returns one, so the message below only ever
+    # counts real archives.
+    found = [f for f in found if f.get("mimeType") != FOLDER_MIME_TYPE]
     archives = [f for f in found if f.get("name", "").lower().endswith(".zip")]
     skipped = len(found) - len(archives)
     if skipped:

@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wikipedia Wrapped Help</title>
+<!-- The single source of the app's user help. Shown inside the app window
+     (the Help button, and the help links in Settings) and readable on its
+     own in a browser; the README points here instead of repeating it.
+     Self-contained on purpose: the dashboard's stylesheet lays the page out
+     as an app grid, which a long document must not inherit.
+
+     Google's wording was checked on 2026-10-24 against Google's own help
+     pages (Takeout: support.google.com/accounts/answer/3024190; Drive for
+     desktop: support.google.com/drive/answer/16631477 and 12178485).
+     Anything that could not be confirmed there is marked
+     "TODO(Joe): verify" on the page itself, so it cannot ship unnoticed. -->
+<style>
+  :root {
+    --bg: #faf9f6;
+    --panel-bg: #f3f1ec;
+    --ink: #3a3a38;
+    --ink-soft: #8a8880;
+    --accent: #7295b8;
+    --line: #e2dfd8;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .page { max-width: 760px; margin: 0 auto; padding: 24px 28px 80px; }
+  h1 { font-size: 24px; margin: 8px 0 4px; }
+  h2 {
+    font-size: 19px;
+    margin: 36px 0 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  h3 { font-size: 16px; margin: 22px 0 6px; }
+  a { color: var(--accent); }
+  code, .path {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0 4px;
+    word-break: break-all;
+  }
+  .lead { color: var(--ink-soft); margin-top: 0; }
+  .toc {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 18px;
+    margin: 18px 0;
+  }
+  .toc ul { margin: 4px 0; padding-left: 20px; }
+  .ui { font-weight: 600; }            /* a label as it appears on screen */
+  .note {
+    background: var(--panel-bg);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    margin: 12px 0;
+  }
+  .warn {
+    background: #f7efe2;
+    border-left: 3px solid #e0a458;
+    padding: 8px 12px;
+    margin: 12px 0;
+  }
+  /* Unverified details: impossible to miss, on purpose. */
+  .todo {
+    background: #fff1b8;
+    color: #6b5200;
+    border: 1px dashed #c9a400;
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .screenshot {
+    margin: 12px 0;
+    padding: 28px 12px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 13px;
+    border: 2px dashed var(--line);
+    border-radius: 6px;
+  }
+  ol li, ul li { margin: 4px 0; }
+  table { border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  td, th { border: 1px solid var(--line); padding: 4px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel-bg); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Wikipedia Wrapped Help</h1>
+<p class="lead">What the app does, how to read it, where your history comes
+from, and what to do when something does not work.</p>
+
+<nav class="toc" aria-label="Contents">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#getting-started">Getting started</a></li>
+    <li><a href="#views">Reading the dashboard</a>: the
+      <a href="#map">map</a>, <a href="#threads">threads</a>, and
+      <a href="#panels">panels</a></li>
+    <li><a href="#your-data">Where your data come from, and what leaves your computer</a></li>
+    <li><a href="#takeout">Setting up Google Takeout</a></li>
+    <li><a href="#advanced">Advanced: signing in to Google Drive</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#storage">Where your data are stored; resetting and uninstalling</a></li>
+  </ul>
+</nav>
+
+<!-- ===================================================================== -->
+<h2 id="getting-started">Getting started</h2>
+
+<p>Wikipedia Wrapped shows what you have been reading on Wikipedia: a map
+of the topics, the paths you took from one article to the next, and when
+you read them. Everything is built from your own browsing history, on your
+own computer.</p>
+
+<ol>
+  <li><strong>The first time you open the app</strong>, a short setup asks
+    which Chrome profiles to read, whether you want to add Google Takeout
+    archives (optional), and whether to sync each time the app starts.
+    Click <span class="ui">Save and start</span> at the end.</li>
+  <li><strong>The first sync</strong> reads your history, then looks up each
+    article on Wikipedia to find its topic and its place on the map. With a
+    lot of history this takes several minutes. Progress shows in a strip at
+    the top of the window, and you can use the app meanwhile. When it
+    finishes, the dashboard fills in.</li>
+  <li><strong>After that</strong>, the app syncs each time it starts (unless
+    you turn that off), so new reading appears on its own. You can change
+    anything later from <span class="ui">Settings</span> in the top-right
+    corner.</li>
+</ol>
+
+<div class="warn"><strong>Open the app at least once a month.</strong>
+Chrome deletes history older than about 90 days. The app keeps a permanent
+copy of every Wikipedia visit it has synced, but it can only save what
+Chrome still has when it syncs. If you go three months without opening it,
+the visits from that gap are gone for good (unless Google Takeout has them;
+see <a href="#takeout">Setting up Google Takeout</a>).</div>
+
+<!-- ===================================================================== -->
+<h2 id="views">Reading the dashboard</h2>
+
+<p>The large area shows one of two views; switch with the
+<span class="ui">UMAP</span> and <span class="ui">Threads</span> buttons at
+the top left. The panels on the left summarize the same history. Hover over
+any article, in either view, to see its details and highlight it in the
+panels.</p>
+
+<h3 id="map">The map (UMAP)</h3>
+<ul>
+  <li><strong>Each colored dot is an article you read.</strong> Articles
+    about similar things sit close together, so neighborhoods of the map are
+    subjects: one corner might be history, another physics.</li>
+  <li><strong>Size</strong> is how many times you visited it.
+    <strong>Color</strong> is its topic, matching the category panel.</li>
+  <li><strong>The faint grey dots</strong> are a fixed sample of Wikipedia
+    articles that defines the map's layout. They are the same for everyone,
+    so your map is comparable over time.</li>
+  <li><strong>Scroll</strong> to zoom, <strong>drag</strong> to move around.</li>
+  <li><strong>Hovering</strong> an article shows a card with its topic, your
+    visits, when you first read it, how many times other people viewed it
+    over the same period (<em>n/a</em> when that is not available), its
+    links in the threads view, and a link to the article.</li>
+</ul>
+<p>"UMAP" is the name of the method that turns article descriptions into
+positions on a flat map. An article only gets a position once its summary
+has been looked up, so for a short while after a big sync some articles are
+missing from the map; the header says so while that is the case.</p>
+
+<h3 id="threads">The threads</h3>
+<ul>
+  <li><strong>Lines connect articles you read one after another</strong>:
+    two visits less than 15 minutes apart count as one reading session, and
+    the articles are linked in the order you read them.</li>
+  <li><strong>Size</strong> shows how central an article is to your reading
+    (its PageRank): large articles are ones many of your reading paths lead
+    to.</li>
+  <li><strong>Hover</strong> an article to highlight its connections and
+    fade everything else, so you can follow a thread.</li>
+</ul>
+
+<h3 id="panels">The panels</h3>
+<table>
+  <tr><th>Panel</th><th>Shows</th><th>Try</th></tr>
+  <tr><td>Categories: you vs popular pages</td>
+      <td>What share of the articles you read falls in each topic, next to
+        the same share for Wikipedia's most-viewed articles.</td>
+      <td>Click a topic to show only its articles; click the background or
+        press Escape to clear.</td></tr>
+  <tr><td>Visits per day</td>
+      <td>Your visits each day, with a 7-day average line.</td>
+      <td>Drag the grips to pick a date range, drag the filled bar to move
+        it, double-click to reset; the play button sweeps through time.</td></tr>
+  <tr><td>Time of day</td>
+      <td>When in the day you read (in your computer's time zone).</td>
+      <td>Click an hour to keep only articles read then; play steps through
+        the day.</td></tr>
+</table>
+<p>The <span class="ui">Panels</span> button hides or shows the sidebar.
+Drag the sidebar's right edge to make the panels bigger; double-click the
+edge to reset. Press Escape to clear every selection at once.</p>
+<p><strong>Showing only some accounts.</strong> If your history comes from
+more than one Google account (say, work and personal), choose which ones the
+dashboard shows in <span class="ui">Settings &gt; Show in dashboard</span>.
+Hidden accounts are not deleted and keep syncing; a note in the header says
+how many are hidden.</p>
+
+<!-- ===================================================================== -->
+<h2 id="your-data">Where your data come from, and what leaves your computer</h2>
+
+<h3>What the app reads</h3>
+<ul>
+  <li><strong>Google Chrome on this computer.</strong> The app reads the
+    history of the Chrome profiles you chose in setup. It reads a copy, so
+    Chrome can stay open.</li>
+  <li><strong>Google Takeout archives</strong>, if you add a folder for them
+    (see <a href="#takeout">below</a>). These cover your whole Google
+    account, including other computers and your phone, and reach further
+    back than 90 days.</li>
+  <li><strong>Google Drive</strong>, only if you set up the
+    <a href="#advanced">Advanced option</a>.</li>
+</ul>
+<p>From all of these, the app keeps <strong>only visits to Wikipedia</strong>,
+and only the article address, title, time, and which account it came from.
+Everything else in your history is ignored and never stored.</p>
+
+<h3>What is sent over the internet</h3>
+<ul>
+  <li><strong>The titles of the Wikipedia articles you visited</strong> are
+    sent to Wikipedia's public services (run by the Wikimedia Foundation) to
+    look up each article's topic, summary, and popularity. Requests are
+    identified only as coming from "Wikipedia Wrapped".
+    Your other browsing, your name, and your account are not sent.</li>
+  <li><strong>The first time</strong>, a language model (about 90 MB) is
+    downloaded from Hugging Face; it is what places articles on the map.
+    Nothing is sent to Hugging Face beyond the download request.</li>
+  <li><strong>Only if you use the Advanced Google Drive option</strong>: the
+    app signs in to your own Google Drive (read-only) and downloads your
+    Takeout archives from it.</li>
+</ul>
+<p>Nothing else leaves your computer. There are no accounts, no analytics,
+and no servers of the app's own.</p>
+
+<!-- ===================================================================== -->
+<h2 id="takeout">Setting up Google Takeout</h2>
+
+<p>Optional, but worth it if you want history from before the last 90 days,
+or from your phone and other computers. Google Takeout exports the Chrome
+history saved in your Google account (when Chrome sync is on). You set it
+up once to repeat every two months, and point Wikipedia Wrapped at the
+folder where the archives arrive. No sign-in to Google is needed in the
+app.</p>
+
+<h3>Part 1: schedule the export in Google Takeout</h3>
+<ol>
+  <li>Go to <a href="https://takeout.google.com/" target="_blank" rel="noopener">takeout.google.com</a>
+    and sign in with the Google account whose Chrome history you want.</li>
+  <li>Products you use are already ticked. Click
+    <span class="ui">Deselect all</span>
+    <span class="todo">TODO(Joe): verify - Google's own help says only to
+    untick unwanted products; "Deselect all" is from third-party guides</span>,
+    then tick <span class="ui">Chrome</span> only.</li>
+  <li>Under Chrome, click <span class="ui">All Chrome data included</span>
+    <span class="todo">TODO(Joe): verify the exact label (Google's help
+    calls it "All data included")</span> and leave only
+    <span class="ui">History</span> ticked
+    <span class="todo">TODO(Joe): verify the item is called History</span>.
+    This keeps the archives small. Click <span class="ui">OK</span>.</li>
+  <li>Scroll down and click <span class="ui">Next step</span>.</li>
+  <li><span class="ui">Delivery method</span>: choose
+    <span class="ui">Add to Drive</span>. (Drive keeps the files until you
+    delete them; a download link sent by email expires after about 7
+    days.)</li>
+  <li><span class="ui">Export type</span> (or frequency): choose
+    <span class="ui">Scheduled exports</span>. Google then makes a new
+    archive every 2 months for a year, starting now.</li>
+  <li><span class="ui">File type</span>: choose <span class="ui">Zip files</span>.
+    The app cannot read the other type (.tgz).</li>
+  <li>Leave <span class="ui">Archive size</span> as it is, and click
+    <span class="ui">Create export</span>.</li>
+</ol>
+<div class="screenshot">Screenshot placeholder: Takeout with only Chrome &gt; History selected</div>
+<div class="screenshot">Screenshot placeholder: Takeout "Next step" page with Add to Drive, Scheduled exports, Zip files</div>
+<p>The first archive can take anywhere from a few minutes to a few days;
+Google emails you when it is ready. A scheduled export runs for one year;
+after that, set it up again.
+<span class="todo">TODO(Joe): verify whether Google offers to renew the schedule</span></p>
+
+<h3>Part 2, option A: let Google Drive for desktop bring the archives in (recommended)</h3>
+<ol>
+  <li>Install <a href="https://www.google.com/drive/download/" target="_blank" rel="noopener">Google Drive for desktop</a>
+    <span class="todo">TODO(Joe): verify download link</span>
+    and sign in with the same Google account.</li>
+  <li>Find the folder Takeout delivers into: <span class="ui">Takeout</span>,
+    in <span class="ui">My Drive</span>.
+    <ul>
+      <li><strong>Mac:</strong> in Finder, under
+        <span class="ui">Locations</span> in the sidebar, click
+        <span class="ui">Google Drive</span>, then
+        <span class="ui">My Drive</span>. (If Finder asks, click
+        <span class="ui">Enable</span> at the top right.) The folder lives
+        under <code>~/Library/CloudStorage</code>.</li>
+      <li><strong>Windows:</strong> open the Google Drive drive in File
+        Explorer (usually <code>G:</code>), then
+        <span class="ui">My Drive</span>.</li>
+    </ul></li>
+  <li><strong>Make the folder available offline.</strong> By default Drive
+    for desktop only downloads a file when something opens it (files that
+    are not downloaded show a cloud icon), and the app cannot read an
+    archive that is not on your computer while you are offline. Right-click
+    the Takeout folder, choose <span class="ui">Offline access</span>, then
+    <span class="ui">Available offline</span>.
+    <span class="todo">TODO(Joe): verify the right-click wording in Finder on
+    current macOS (File Provider) and in Windows File Explorer</span>
+    Alternatively, keep everything on your computer: Drive for desktop
+    <span class="ui">Settings &gt; Preferences &gt; Google Drive</span>, and
+    under <span class="ui">My Drive syncing options</span> choose
+    <span class="ui">Mirror files</span>.</li>
+  <li>In Wikipedia Wrapped, open <span class="ui">Settings</span>, and under
+    <span class="ui">Google Takeout</span> click
+    <span class="ui">Add a folder...</span> and choose that Takeout folder.
+    Give it a label, such as your Google email, so you can tell accounts
+    apart. The app shows how many archives it found.</li>
+</ol>
+<div class="screenshot">Screenshot placeholder: Finder sidebar with Google Drive under Locations</div>
+<div class="screenshot">Screenshot placeholder: the right-click menu with Available offline</div>
+
+<h3>Part 2, option B: download the archives yourself</h3>
+<ol>
+  <li>When Google emails you that an archive is ready, download it. (If you
+    chose <span class="ui">Add to Drive</span>, download it from Drive; a
+    link sent by email expires after about 7 days.)</li>
+  <li>Put the downloaded <code>takeout-....zip</code> files in one folder,
+    for example a "Wikipedia Takeout" folder in Documents. Leave them as
+    zips; do not unzip them.</li>
+  <li>In Wikipedia Wrapped, add that folder in
+    <span class="ui">Settings &gt; Google Takeout</span>. Repeat the
+    download every two months, when Google emails you.</li>
+</ol>
+
+<div class="note"><strong>What the app does with the archives.</strong> It
+checks the folder (and folders inside it, up to 4 levels down) at every
+sync, reads only the Chrome history inside each new archive, and keeps only
+the Wikipedia visits. It never changes, moves, or deletes your archives; once
+an archive has been synced you may delete it yourself, because its visits
+are saved. Large exports are split into several zips; only one of them
+holds the history, and the others are skipped quietly.</div>
+
+<!-- ===================================================================== -->
+<h2 id="advanced">Advanced: signing in to Google Drive</h2>
+
+<p>Most people do not need this: a <a href="#takeout">watched folder</a>
+does the same job without signing in. This option has the app fetch the
+Takeout archives straight from Google Drive, using a Google Cloud project
+you create yourself. Access is read-only: the app can list and download
+files, and never changes or deletes anything in your Drive. The app never
+sees your Google password.</p>
+
+<h3>1. Create your own OAuth client (once, in Google Cloud Console)</h3>
+<span class="todo">TODO(Joe): verify these Console labels; only "Google Auth
+Platform &gt; Clients &gt; Create client" was confirmed on 2026-10-24</span>
+<ol>
+  <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>
+    and create a project.</li>
+  <li>In <span class="ui">APIs and Services &gt; Library</span>, find
+    <span class="ui">Google Drive API</span> and click
+    <span class="ui">Enable</span>.</li>
+  <li>Open <span class="ui">Google Auth Platform</span>. Set
+    <span class="ui">Audience</span> to <span class="ui">External</span>, and
+    fill in an app name and your email.</li>
+  <li>Under <span class="ui">Audience &gt; Test users</span>, add every Google
+    account whose history you want to read.</li>
+  <li>Under <span class="ui">Data access</span>, add the scope
+    <code>https://www.googleapis.com/auth/drive.readonly</code> and nothing
+    else.</li>
+  <li>Under <span class="ui">Clients</span>, click
+    <span class="ui">Create client</span>, choose
+    <span class="ui">Desktop app</span>, and download the JSON file.</li>
+</ol>
+
+<h3>2. Connect it in Wikipedia Wrapped</h3>
+<ol>
+  <li>Open <span class="ui">Settings</span>, then the
+    <span class="ui">Advanced</span> section.</li>
+  <li>Click <span class="ui">Choose file...</span> and pick the JSON file you
+    downloaded. The app checks it and keeps its own private copy.</li>
+  <li>Click <span class="ui">Add a Google account...</span>. Your browser
+    opens Google's sign-in; finish there and come back. Repeat for each
+    account.</li>
+  <li>Optionally enter the name of the Drive folder to search
+    (<code>Takeout</code>); leave it blank to search all of Drive.</li>
+  <li>Click <span class="ui">Save</span>. The next sync checks Drive.</li>
+</ol>
+<div class="note"><strong>About the 7-day sign-out.</strong> While your
+Cloud project's app is in "Testing", Google signs it out after about 7
+days. The app then marks the account as needing to sign in again (in the
+progress strip and in Settings); click <span class="ui">Sign in again</span>
+next to it. Your local Chrome history and any watched folders keep syncing
+in the meantime.</div>
+
+<!-- ===================================================================== -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3 id="no-profiles">No Chrome profiles found</h3>
+<ul>
+  <li>The app reads <strong>Google Chrome</strong> only. Safari, Firefox,
+    Edge and other browsers are not supported.</li>
+  <li>Chrome keeps its history in your user account's folder. If you have
+    never opened Chrome while signed in to this computer as yourself, there
+    is nothing to read yet: open Chrome once, then reopen Settings.</li>
+  <li>Where the app looks:
+    <ul>
+      <li>Mac: <code>~/Library/Application Support/Google/Chrome</code></li>
+      <li>Windows: <code>%LOCALAPPDATA%\Google\Chrome\User Data</code></li>
+    </ul></li>
+  <li>If you use Chrome with sync turned on, <a href="#takeout">Google
+    Takeout</a> can still bring in your history from your Google
+    account.</li>
+</ul>
+
+<h3 id="no-zips">No Takeout archives found</h3>
+<ul>
+  <li>The first export can take hours or days. Check your email from
+    Google.</li>
+  <li>The app looks for files named <code>takeout-...zip</code>. A
+    <code>.tgz</code> archive cannot be read: choose
+    <span class="ui">Zip files</span> in Takeout.</li>
+  <li>Make sure you added the folder the archives are actually in. The app
+    looks up to 4 folders deep, but skips hidden folders and the Trash.</li>
+  <li>With Google Drive for desktop, the archive may still be syncing to
+    your computer. Wait for it to finish, and make the folder
+    <a href="#takeout">available offline</a>.</li>
+</ul>
+
+<h3 id="sync-errors">Sync problems</h3>
+<p>Problems from the last sync are listed at the top of
+<span class="ui">Settings</span>, and the progress strip says how many
+there were. None of them stops the app from working with the history it
+already has. Common ones:</p>
+<table>
+  <tr><th>Message</th><th>What to do</th></tr>
+  <tr><td>"not a readable zip"</td>
+      <td>The archive is still downloading or syncing, or is damaged. It is
+        tried again at the next sync. If it keeps happening, download it
+        again.</td></tr>
+  <tr><td>"could not be read ... online-only Google Drive file"</td>
+      <td>Make the folder available offline in Drive for desktop, or connect
+        to the internet and sync again.</td></tr>
+  <tr><td>"Folder not found"</td>
+      <td>The folder is on a drive that is not connected, or it was moved or
+        renamed. Reconnect the drive, or change the folder in Settings.</td></tr>
+  <tr><td>"Cannot read the folder" (Mac)</td>
+      <td>macOS may be blocking access to Desktop, Documents, Downloads, or an
+        external drive. Allow it in System Settings &gt; Privacy &amp; Security
+        &gt; Files and Folders.</td></tr>
+  <tr><td>"needs you to sign in again"</td>
+      <td>See <a href="#advanced">the 7-day sign-out</a>; click
+        <span class="ui">Sign in again</span> in Settings.</td></tr>
+  <tr><td>Topics or map positions missing</td>
+      <td>Usually means Wikipedia could not be reached (for example, you
+        were offline). Your visits are saved; the missing details are added
+        at the next sync.</td></tr>
+</table>
+<p>To try again straight away, use <span class="ui">Settings &gt; Syncing
+&gt; Sync now</span>.</p>
+
+<h3 id="logs">Viewing the logs</h3>
+<p>The app writes a log of everything it does, including every sync, to
+<code>logs/app.log</code> in its data folder (location below; the exact path
+is also shown at the bottom of Settings). Older logs are kept as
+<code>app.log.1</code> to <code>app.log.5</code>. They are plain text: open
+them in any text editor, or attach them when asking for help. They contain
+article titles you read, so look through them before sharing.</p>
+
+<!-- ===================================================================== -->
+<h2 id="storage">Where your data are stored; resetting and uninstalling</h2>
+
+<p>Everything the app saves is in one folder:</p>
+<table>
+  <tr><th>Computer</th><th>Folder</th></tr>
+  <tr><td>Mac</td><td><code>~/Library/Application Support/WikipediaWrapped</code></td></tr>
+  <tr><td>Windows</td><td><code>%APPDATA%\WikipediaWrapped</code></td></tr>
+  <tr><td>Linux</td><td><code>~/.local/share/WikipediaWrapped</code></td></tr>
+</table>
+<p id="this-computer" hidden>On this computer: <span class="path" id="this-computer-path"></span></p>
+
+<table>
+  <tr><th>Inside it</th><th>What it is</th></tr>
+  <tr><td><code>data/visits.jsonl</code></td>
+      <td><strong>Your saved history: the one file worth backing up.</strong>
+        It is the only copy of visits Chrome has since deleted.</td></tr>
+  <tr><td><code>data/app.db</code></td>
+      <td>The database the dashboard reads; rebuilt from
+        <code>visits.jsonl</code> if deleted.</td></tr>
+  <tr><td><code>config.local.toml</code></td><td>Your settings.</td></tr>
+  <tr><td><code>tokens/</code>, <code>client_secret.json</code></td>
+      <td>Only with the <a href="#advanced">Advanced option</a>: your Google
+        sign-in and OAuth client.</td></tr>
+  <tr><td><code>logs/</code>, <code>cache/</code>, <code>webview/</code></td>
+      <td>Logs, a speed-up cache, and the window's saved layout.</td></tr>
+</table>
+
+<h3 id="reset">Resetting</h3>
+<p>Quit the app first.</p>
+<ul>
+  <li><strong>Run setup again:</strong> delete <code>config.local.toml</code>.
+    The next launch shows the setup screens; your history is kept.</li>
+  <li><strong>Rebuild the dashboard's database:</strong> delete
+    <code>data/app.db</code> (and <code>app.db-wal</code> and
+    <code>app.db-shm</code> next to it, if present). The next sync rebuilds
+    it from <code>visits.jsonl</code> and looks the articles up again,
+    which takes a while.</li>
+  <li><strong>Start over completely:</strong> delete the whole folder.</li>
+</ul>
+<div class="warn"><strong>Before deleting the folder, copy
+<code>data/visits.jsonl</code> somewhere safe.</strong> It holds every
+visit the app has ever saved; anything older than Chrome's 90 days exists
+nowhere else, unless a Takeout archive has it.</div>
+
+<h3 id="uninstall">Uninstalling</h3>
+<ol>
+  <li>Quit the app and remove it like any other application.
+    <span class="todo">TODO(Joe): add the installer-specific steps once the
+    installer exists</span></li>
+  <li>Delete the data folder above if you no longer want your saved history
+    (back up <code>visits.jsonl</code> first if you might).</li>
+  <li>If you used the <a href="#advanced">Advanced option</a>, remove the
+    app's access to your Google account in your Google Account's
+    third-party connections
+    (<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>
+    <span class="todo">TODO(Joe): verify link</span>).</li>
+</ol>
+
+</div>
+<script>
+  /* Inside the app, show this computer's actual data folder. On its own
+     (opened as a file), the request fails and the generic table above
+     stands alone. */
+  fetch("/settings").then(r => r.json()).then(info => {
+    document.getElementById("this-computer-path").textContent = info.paths.user_data;
+    document.getElementById("this-computer").hidden = false;
+  }).catch(() => {});
+</script>
+</body>
+</html>

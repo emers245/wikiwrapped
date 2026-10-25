@@ -6,6 +6,10 @@ from fastapi.testclient import TestClient
 
 from app import api, network, storage
 
+# The API only answers to loopback names (app.api local_only), like the
+# real window; TestClient's default host, "testserver", would be refused.
+LOCAL = "http://127.0.0.1"
+
 
 @pytest.fixture
 def conn():
@@ -66,7 +70,7 @@ def test_graph_metrics_empty_db(conn):
 def test_network_endpoints(tmp_path):
     app = api.create_app(db_path=tmp_path / "t.db",
                          reference_dir=tmp_path / "none")
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         conn = storage.connect(tmp_path / "t.db")
         seed_chain(conn)
         conn.commit()
