@@ -358,8 +358,8 @@ def main(argv: list[str] | None = None) -> int:
     warn_if_incomplete(settings)
     print("\nNext:")
     print("  python -m app.sync --force     sync now")
-    print("  ./run.sh                       launch (syncs first)")
-    print("  ./run.sh --no-sync             launch without syncing")
+    print("  python -m app.launcher         launch (syncs in the background)")
+    print("  python -m app.launcher --no-sync   launch without syncing")
     return 0
 
 

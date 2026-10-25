@@ -13,12 +13,17 @@ Endpoints:
        /stats/daily?tz= | /stats/busiest-week?tz= | /stats/topics
 - GET  /map                   projected pages: title, x, y, topic, visits
 - GET  /pages/{title}         per-page detail (Phase 2 mouseover payload)
+- GET  /jobs                  background job progress (sync + enrichment)
+- POST /jobs/sync             start a sync + enrichment job now
 
-Run:  uvicorn app.api:app --reload
+Run:  python -m app.launcher   (the app window; see app/launcher.py)
+ or:  uvicorn app.api:app --reload   (API only, for development)
 
 create_app() exists so tests (and future deployments) can point the app
-at a different database/reference directory; the module-level `app` uses
-the config defaults.
+at a different database/reference directory, and so the launcher can hand
+in the JobRunner it owns; the module-level `app` uses the config defaults.
+Building an app has no side effects: a JobRunner starts nothing until a
+job is requested.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
-from app import (embeddings, ingest, migrate, network, pageviews, stats,
+from app import (embeddings, ingest, jobs, migrate, network, pageviews, stats,
                  storage, sync, topics, umap_space)
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -40,10 +45,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 def create_app(
     db_path: str | Path | None = None,
     reference_dir: str | Path | None = None,
+    job_runner: jobs.JobRunner | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Wikipedia Wrapped", version=config.APP_VERSION)
     db_path = db_path or config.DB_PATH
     reference_dir = reference_dir or config.REFERENCE_DIR
+    runner = job_runner or jobs.JobRunner()
 
     def get_db():
         conn = storage.connect(db_path)
@@ -149,8 +156,8 @@ def create_app(
             "visits": storage.count_visits(conn),
             "reference_space": reference,
             "sources": storage.visit_source_summary(conn),
-            # Non-zero means an ingest has outrun /enrich; run.sh checks
-            # this on launch and the dashboard header surfaces it.
+            # Non-zero means an ingest has outrun enrichment; the launcher's
+            # background job closes the gap and the dashboard header says so.
             "enrichment": storage.count_enrichment_gaps(conn),
             "sync": {
                 "last_attempt": state.get("last_attempt"),
@@ -200,6 +207,24 @@ def create_app(
         if include_pageviews:
             report["pageviews"] = pageviews.fetch_all(conn)
         return report
+
+    # -- background jobs ---------------------------------------------------
+
+    @app.get("/jobs")
+    def job_status():
+        """What the background job is doing; the window polls this."""
+        return runner.snapshot()
+
+    @app.post("/jobs/sync")
+    def start_sync(enrich: bool = True):
+        """Sync every source now (ignoring the interval), then enrich.
+
+        409 if a job is already running rather than queueing a second one:
+        two syncs at once would only race each other to the same result.
+        """
+        if not runner.start("sync", jobs.sync_steps(force=True, enrich=enrich)):
+            raise HTTPException(409, "A sync is already running.")
+        return runner.snapshot()
 
     # -- stats (S7.3) ------------------------------------------------------
 

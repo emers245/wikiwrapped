@@ -1,11 +1,12 @@
 """Check-on-launch sync: refresh the visit log, then the DB (D12).
 
-Not a daemon and not a scheduler. This is a single pass that run.sh invokes
-before starting uvicorn, and that you can run by hand any time:
+Not a daemon and not a scheduler. This is a single pass that the launcher
+runs as a background job (app/jobs.py) once the window is open, and that
+you can run by hand any time:
 
     python -m app.sync                 # sync now (respects the interval)
     python -m app.sync --force         # ignore the interval
-    python -m app.sync --on-launch     # what run.sh calls; obeys the config gate
+    python -m app.sync --on-launch     # what the launcher runs; obeys sync.on_launch
     python -m app.sync --rebuild       # re-ingest the whole log into the DB
     python -m app.sync --no-drive      # skip the Drive (OAuth) route
     python -m app.sync --no-folders    # skip watched folders
@@ -41,8 +42,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import config
-from app import (dedup, drive, folders, ingest, localconfig, migrate, storage,
-                 visitlog)
+from app import (dedup, drive, folders, ingest, localconfig, migrate, progress,
+                 storage, visitlog)
 from extract import extract_history
 
 log = logging.getLogger(__name__)
@@ -432,6 +433,7 @@ def sync_folders(conn, settings, log_path=None, known=None) -> dict:
 def _sync_one_folder(conn, entry, seen, log_path=None, known=None) -> dict:
     path, label = entry["path"], entry.get("label") or ""
     name = f"Watched folder {label!r}" if label else f"Watched folder {path}"
+    progress.emit("folders", f"Checking {label or path} for Takeout archives")
     folder_report = {
         "path": path,
         "label": label,
@@ -467,6 +469,7 @@ def _sync_one_folder(conn, entry, seen, log_path=None, known=None) -> dict:
         if storage.is_archive_processed(conn, file_id, modified):
             folder_report["skipped"] += 1
             continue
+        progress.emit("folders", f"Reading {zip_path.name}")
         try:
             added = _ingest_local_archive(
                 conn, zip_path, file_id, modified, label or None,
@@ -575,6 +578,7 @@ def run(
     before = len(known)
 
     if use_local:
+        progress.emit("local", "Reading Chrome history")
         report["local"] = sync_local_chrome(
             log_path=log_path,
             known=known,
@@ -595,6 +599,7 @@ def run(
             report["folders"] = {"skipped": "No watched folders configured"}
 
         if use_drive and localconfig.takeout_enabled(settings):
+            progress.emit("drive", "Checking Google Drive for new Takeout archives")
             report["takeout"] = sync_takeout(
                 conn, settings, log_path=log_path, known=known
             )
@@ -605,6 +610,12 @@ def run(
 
         newly_logged = len(known) - before
         report["visits_logged"] = newly_logged
+        if newly_logged:
+            progress.emit(
+                "database",
+                f"Adding {newly_logged} new visit(s); new article titles are "
+                "looked up on Wikipedia",
+            )
         report["ingest"] = _update_database(
             conn, log_path=log_path, newly_logged=newly_logged, rebuild=rebuild
         )
@@ -806,8 +817,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(_summarize(report))
-    # Exit 0 even on errors: run.sh must go on to start the server. The
-    # errors are in the report, in sync_state.json, and on /health.
+    # Exit 0 even on errors: a handled problem is not a failed step, and the
+    # launcher's job goes on to enrichment either way. The errors are in the
+    # report, in sync_state.json, and on /health.
     return 0
 
 

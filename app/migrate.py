@@ -26,8 +26,9 @@ else (D9). Hence these rules, every one of which a test pins down:
   ever allows, so this is the same thing a sync would do.
 - VERIFY EVERY COPY. Plain files by SHA-256. The database by SQLite's
   integrity_check plus a hash of its full SQL dump, because the backup API
-  (used so a live database is copied consistently) does not promise a
-  byte-identical file.
+  does not promise a byte-identical file. The source database is never
+  opened in place (even a read-only open can create files beside it); it
+  is snapshotted to a temp dir first, see _db_snapshot.
 - NOTHING AUTOMATIC. The app never calls this. It only warns, via
   legacy_status(), that unmigrated data exists.
 
@@ -38,6 +39,7 @@ read-only app resource) and is never copied.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -45,9 +47,9 @@ import os
 import shutil
 import sqlite3
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import quote
 
 import config
 from app import visitlog
@@ -135,15 +137,30 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _open_readonly(path: Path) -> sqlite3.Connection:
-    """Open a database without any possibility of writing to it.
+@contextlib.contextmanager
+def _db_snapshot(path: Path):
+    """A private copy of a source database, safe to open however SQLite likes.
 
-    mode=ro needs SQLite's URI syntax, so the path is percent-encoded: a
-    "?" or "#" in a folder name would otherwise be read as URI syntax.
+    Opening the source directly is not safe, even read-only: for a database
+    in WAL mode, SQLite creates -wal and -shm files beside it on open, which
+    would be a write into the source folder. So the database and any
+    journal beside it are copied into a temp dir first and every read
+    happens there. Copying a -wal or a hot -journal along with the file
+    means SQLite replays or rolls back exactly as it would have on the
+    original, so the snapshot shows the last COMMITTED state, never a
+    half-written transaction.
     """
-    return sqlite3.connect(
-        f"file:{quote(path.as_posix(), safe='/:')}?mode=ro", uri=True
-    )
+    tmpdir = Path(tempfile.mkdtemp(prefix="wikiwrapped-migrate-"))
+    try:
+        snapshot = tmpdir / path.name
+        shutil.copy2(path, snapshot)
+        for suffix in ("-wal", "-journal"):
+            side = path.with_name(path.name + suffix)
+            if side.exists():
+                shutil.copy2(side, tmpdir / side.name)
+        yield snapshot
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def db_fingerprint(path: Path) -> str:
@@ -151,9 +168,10 @@ def db_fingerprint(path: Path) -> str:
 
     Two databases with the same fingerprint hold the same data, which is
     what "the copy is correct" has to mean once the backup API is involved.
+    Only ever called on a snapshot or on a destination, never on a source.
     """
     digest = hashlib.sha256()
-    conn = _open_readonly(path)
+    conn = sqlite3.connect(str(path))
     try:
         for line in conn.iterdump():
             digest.update(line.encode("utf-8"))
@@ -164,7 +182,7 @@ def db_fingerprint(path: Path) -> str:
 
 
 def db_integrity_ok(path: Path) -> bool:
-    conn = _open_readonly(path)
+    conn = sqlite3.connect(str(path))
     try:
         return conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
@@ -192,7 +210,8 @@ def _decide(item: Item) -> None:
         item.action = "copy"
         return
     if item.kind == "sqlite":
-        same = db_fingerprint(item.source) == db_fingerprint(item.dest)
+        with _db_snapshot(item.source) as snapshot:
+            same = db_fingerprint(snapshot) == db_fingerprint(item.dest)
     else:
         same = file_sha256(item.source) == file_sha256(item.dest)
     if same:
@@ -276,10 +295,12 @@ def _copy(item: Item) -> None:
     tmp = item.dest.with_name(item.dest.name + ".migrating")
     try:
         if item.kind == "sqlite":
-            _sqlite_backup(item.source, tmp)
-            item.verified = (
-                db_integrity_ok(tmp) and db_fingerprint(tmp) == db_fingerprint(item.source)
-            )
+            with _db_snapshot(item.source) as snapshot:
+                _sqlite_backup(snapshot, tmp, mode_from=item.source)
+                item.verified = (
+                    db_integrity_ok(tmp)
+                    and db_fingerprint(tmp) == db_fingerprint(snapshot)
+                )
         else:
             shutil.copy2(item.source, tmp)   # copy2 keeps the 0600 modes
             item.verified = file_sha256(tmp) == item.source_hash_before
@@ -291,10 +312,13 @@ def _copy(item: Item) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def _sqlite_backup(source: Path, dest: Path) -> None:
-    """SQLite's online backup: a consistent snapshot even if the source is
-    open elsewhere or has a write-ahead log beside it."""
-    src = _open_readonly(source)
+def _sqlite_backup(snapshot: Path, dest: Path, mode_from: Path) -> None:
+    """SQLite's backup API, from the private snapshot to the destination.
+
+    The backup writes a clean, self-contained database (no -wal to carry
+    along), and copymode then gives it the source's permissions.
+    """
+    src = sqlite3.connect(str(snapshot))
     try:
         dst = sqlite3.connect(str(dest))
         try:
@@ -304,7 +328,7 @@ def _sqlite_backup(source: Path, dest: Path) -> None:
     finally:
         src.close()
     try:
-        shutil.copymode(source, dest)
+        shutil.copymode(mode_from, dest)
     except OSError:
         pass
 

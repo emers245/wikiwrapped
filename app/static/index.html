@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>Wikipedia Wrapped</title>
-<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<!-- Vendored, not from a CDN, so the app works offline (vendor/README.md). -->
+<script src="/static/vendor/d3-7.9.0.min.js"></script>
+<script src="/static/vendor/cytoscape-3.30.2.min.js"></script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -57,6 +58,15 @@
   <div id="network-view" class="inactive"></div>
   <div id="viz-message" class="hidden"></div>
   <div id="popup" class="hidden"></div>
+  <!-- Background sync/enrichment progress (GET /jobs). Floats over the
+       visualization so it never shifts the layout grid. -->
+  <div id="job-strip" class="hidden" role="status" aria-live="polite">
+    <span id="job-message"></span>
+    <span id="job-bar" class="hidden"><span id="job-bar-fill"></span></span>
+    <span id="job-count"></span>
+    <button id="job-reload" class="hidden">Reload</button>
+    <button id="job-dismiss" class="hidden" title="Dismiss">Close</button>
+  </div>
 </main>
 
 <script src="/static/panels.js"></script>

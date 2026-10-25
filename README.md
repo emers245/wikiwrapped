@@ -85,8 +85,9 @@ python -m app.sync --force
 #    resumable; use --head/--tail for small test builds)
 python scripts/build_reference_space.py
 
-# 3. Serve + open the dashboard (syncs first; see "check-on-launch" below)
-./run.sh
+# 3. Open the app window (syncs and enriches in the background; see
+#    "Launching" below)
+python -m app.launcher        # or ./run.sh, which finds the conda env first
 ```
 
 `app.sync` reads every local Chrome profile, plus any Google Takeout archive
@@ -163,7 +164,7 @@ archive, and it only gains a visit when a sync actually runs.
 
 The practical consequence: **sync at least once every 90 days, or that
 profile's history is permanently lost.** Launching the dashboard is enough,
-since `run.sh` syncs first. If you go three months without opening it, the
+since the launcher syncs on every launch. If you go three months without opening it, the
 gap is not recoverable by any means.
 
 To see where you stand per source:
@@ -324,9 +325,10 @@ python scripts/setup_takeout.py --disable             # turn it off, keep data
 
 ### Check-on-launch syncing
 
-`./run.sh` runs one sync pass before starting the server: it re-reads local
-Chrome, scans the watched folders, checks Drive (if enabled) for archives it
-has not processed, appends everything to the log, and updates the database.
+The launcher runs one sync pass as a background job right after the window
+opens: it re-reads local Chrome, scans the watched folders, checks Drive (if
+enabled) for archives it has not processed, appends everything to the log,
+and updates the database. Enrichment of any new pages follows.
 
 Sync preferences cover every source, so they live in their own table:
 
@@ -342,7 +344,7 @@ was never captured on launch without it. Old files are migrated when loaded
 (the legacy on-launch flag is honored only where Takeout was enabled).
 
 It is a single pass, not a daemon or a scheduler, and it runs as its own
-process so a failure cannot take the dashboard down. If Drive is
+child process so a failure cannot take the dashboard down. If Drive is
 unreachable, a token has expired, or an archive is malformed, it logs a
 warning, records the problem in `data/sync_state.json` where `GET /health`
 exposes it, and **serves the dashboard with existing data anyway**.
@@ -351,8 +353,8 @@ Takeout only produces a new archive every ~2 months, so the pass early-exits
 if one ran within `min_interval_hours` (default 24).
 
 ```bash
-./run.sh --no-sync       # launch without syncing
-./run.sh --force-sync    # sync even if one ran recently
+python -m app.launcher --no-sync      # launch without syncing
+python -m app.launcher --force-sync   # sync even if one ran recently
 
 python -m app.sync --force      # sync now
 python -m app.sync --no-drive   # skip the Drive (OAuth) route
@@ -446,48 +448,89 @@ whenever any row is dropped for a bad timestamp.
 
 ## Launching
 
-`run.sh` is the whole launch procedure in one command: it locates the conda
-environment by path (so no `conda activate` is needed first), runs the
-check-on-launch sync, starts uvicorn, waits for the API to answer, opens the
-dashboard in a browser, and leaves the server in the foreground so Ctrl-C
-stops it. Re-running it while a server is already up on that port reuses it
-instead of failing to bind.
+`python -m app.launcher` (`app/launcher.py`) is the whole launch procedure,
+cross-platform and with no conda or shell assumptions:
+
+1. Logs to `logs/app.log` in the user-data directory (rotating, 1 MB x 5)
+   from the first line, since an installed app has no console. The sync and
+   enrichment children's output lands there too.
+2. If this user's server is already running (recorded in `server.json` in
+   the user-data dir and confirmed by the `/health` identity check, which
+   also matches the database path), it opens another window on it instead
+   of starting a second server.
+3. Starts uvicorn on **127.0.0.1 only**, in a background thread, because
+   pywebview must own the main thread (macOS requires it). The port is
+   48213 when free and any free port otherwise. A fixed preferred port
+   matters: localStorage is keyed by origin, port included, so a random
+   port would forget the panel layout on every launch.
+4. Opens the dashboard in a **pywebview** window as soon as the server
+   answers (about a second), then runs the check-on-launch sync and the
+   enrichment as a background job whose progress shows in a strip at the
+   top of the window. When it finishes, an empty dashboard reloads itself;
+   a populated one offers a Reload button.
+5. Closing the window stops the job's child process, stops the server, and
+   removes `server.json`.
 
 ```bash
-./run.sh --port 8080     # serve somewhere else
-./run.sh --no-browser    # server only
-./run.sh --no-sync       # skip the sync pass
-./run.sh --force-sync    # sync even if one ran recently
+python -m app.launcher                # the app window
+python -m app.launcher --browser      # a normal browser tab (dev/debugging);
+                                      # Ctrl-C or kill stops it cleanly
+python -m app.launcher --port 8080    # prefer another port
+python -m app.launcher --no-sync      # skip the sync pass
+python -m app.launcher --force-sync   # sync even if one ran recently
+python -m app.launcher --no-enrich    # skip topic/map enrichment
+python -m app.launcher --debug        # enable the window's web inspector
 ```
 
-To launch from anywhere, add an alias to `~/.zshrc`:
+`./run.sh` is kept as a thin developer wrapper: it finds the conda
+environment by path (so no `conda activate` first) and execs the launcher
+with the same flags, so an existing alias keeps working:
 
 ```bash
 alias wikiwrapped="$HOME/Documents/GitHub/wikipedia-wrapped/run.sh"
 ```
 
-Then drive it over HTTP:
+**Why the background work runs in child processes, not threads**
+(`app/jobs.py`): a sync stuck on a Drive online-only file, or an enrichment
+that crashes inside numba or torch, cannot freeze or kill the window; a
+child can be terminated when the window closes, where a thread cannot; and
+the language model's memory is released when enrichment exits. Progress
+crosses the process boundary as `@@progress {json}` lines on the child's
+stdout (`app/progress.py`). One job runs at a time.
+
+**SQLite is shared safely** between those children (writing) and the API
+(reading) because `storage.connect` puts the database in WAL mode with a
+30-second busy timeout: readers never block the writer or vice versa.
+
+**pywebview comes from PyPI, not conda-forge**: conda-forge only builds it
+for Windows and Linux (checked 2026-10-24), so `environment.yml` installs
+it through its `pip:` section. Only `app/launcher.py` imports it, and only
+when opening a window, so the tests and `--browser` mode never need it.
+
+The API can still be driven over HTTP (the port is in `server.json`):
 
 ```bash
-curl -X POST localhost:8000/ingest --json @wikipedia_history.json
-curl -X POST "localhost:8000/enrich?include_pageviews=true"
-curl localhost:8000/stats/summary
+curl -X POST localhost:48213/jobs/sync    # sync + enrich now, in the background
+curl localhost:48213/jobs                 # progress of that job
+curl -X POST localhost:48213/ingest --json @wikipedia_history.json
+curl -X POST "localhost:48213/enrich?include_pageviews=true"
+curl localhost:48213/stats/summary
 ```
 
 `GET /health` also reports the per-source visit breakdown and the last sync's
 outcome, including any account that needs re-authorization.
 
-Endpoints: `/health`, `POST /ingest`, `POST /enrich`, `/stats/summary`,
-`/stats/top?n=`, `/stats/heatmap?tz=`, `/stats/daily?tz=`,
-`/stats/busiest-week?tz=`, `/stats/topics`, `/map`, `/network`,
-`/pages/{title}`, `/dashboard`. Interactive docs at `localhost:8000/docs`.
+Endpoints: `/health`, `/jobs`, `POST /jobs/sync`, `POST /ingest`,
+`POST /enrich`, `/stats/summary`, `/stats/top?n=`, `/stats/heatmap?tz=`,
+`/stats/daily?tz=`, `/stats/busiest-week?tz=`, `/stats/topics`, `/map`,
+`/network`, `/pages/{title}`, `/dashboard`. Interactive docs at `/docs`.
 Run tests with `pytest` (`-m "not integration"` to stay offline).
 
 ## Dashboard (Phase 2)
 
-Open `localhost:8000/` in a browser for the interactive dashboard. It is
-a single page (vanilla JS, no build step; D3 + cytoscape.js from CDN,
-served from `app/static/`) that loads everything once from
+The launcher opens the interactive dashboard. It is a single page (vanilla
+JS, no build step; D3 and cytoscape.js vendored in `app/static/vendor/`,
+not loaded from a CDN, so it works offline) that loads everything once from
 `GET /dashboard` so all hover interactions are instant.
 
 - **Main view, two modes** (toggle top-left):
@@ -521,8 +564,8 @@ Below a 720px viewport the sidebar floats over the visualization as a
 drawer instead of taking its own column, and the drag handle is hidden.
 
 The UMAP mode and the "popular" baseline require the reference space
-(`data/reference/`) and enriched pages (`POST /enrich`); without them the
-app falls back to network mode only.
+(`data/reference/`) and enriched pages (the launcher enriches after every
+sync); without them the app falls back to network mode only.
 
 ### Frontend layout contract
 
@@ -590,7 +633,7 @@ vertical bars did not.
 ## Layout
 
 ```
-run.sh                       # one-command launcher (sync + server + browser)
+run.sh                       # dev wrapper: finds the conda env, runs app.launcher
 config.py                    # paths (user data vs resources), user-agent, timezone
 
 extract/extract_history.py   # standalone: Takeout zip / Chrome DB / JSON
@@ -600,6 +643,9 @@ app/
   migrate.py                 # opt-in copy of repo-local data to the user-data dir
   sync.py                    # check-on-launch pass over every input source
   folders.py                 # watched folders: find Takeout zips on disk
+  launcher.py                # the app: logging, server thread, pywebview window
+  jobs.py                    # background sync/enrich as child processes
+  progress.py                # progress events from those children
   drive.py                   # read-only Google Drive client (lazy imports)
   dedup.py                   # collapse one visit seen by two sources
   localconfig.py             # config.local.toml read/write

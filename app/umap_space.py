@@ -68,7 +68,16 @@ def load_reducer(reference_dir: str | Path | None = None):
         numba_cache.mkdir(parents=True, exist_ok=True)
         os.environ["NUMBA_CACHE_DIR"] = str(numba_cache)
     with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle:
-        return pickle.load(handle)
+        reducer = pickle.load(handle)
+    # The build fits with verbose=True for its own console, and that choice
+    # is pickled with the reducer twice over: the verbose flag (epoch
+    # counters) and tqdm_kwds["disable"], which umap fills in from it at fit
+    # time (the progress bar). Left on, every transform would print both
+    # into the app log.
+    reducer.verbose = False
+    if isinstance(getattr(reducer, "tqdm_kwds", None), dict):
+        reducer.tqdm_kwds["disable"] = True
+    return reducer
 
 
 def load_points(reference_dir: str | Path | None = None) -> list[dict]:

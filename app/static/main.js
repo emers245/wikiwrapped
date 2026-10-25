@@ -317,6 +317,134 @@ window.WW = (function () {
       requestAnimationFrame(() => document.body.classList.remove("no-anim")));
   })();
 
+  /* -- background jobs ----------------------------------------------------- */
+  /* The launcher syncs and enriches AFTER the window opens (app/jobs.py),
+     so the dashboard first shows whatever data already exists and this
+     strip reports the job. When it finishes, /health is compared with what
+     was loaded: an empty dashboard reloads by itself, a populated one
+     offers a Reload button rather than yanking away the user's view. */
+  const POLL_RUNNING_MS = 1000;
+  const POLL_IDLE_MS = 5000;
+  const strip = document.getElementById("job-strip");
+  const jobMessage = document.getElementById("job-message");
+  const jobBar = document.getElementById("job-bar");
+  const jobFill = document.getElementById("job-bar-fill");
+  const jobCount = document.getElementById("job-count");
+  const jobReload = document.getElementById("job-reload");
+  const jobDismiss = document.getElementById("job-dismiss");
+  const REPORTED_KEY = "ww.reportedJob";
+  let lastJobId = null;      // the job last seen running
+  /* The job whose result was already shown. Kept in sessionStorage so the
+     Reload button does not bring the same report straight back; a new
+     window is a new session, so a fresh launch still reports its job. */
+  let reported = null;
+  try {
+    reported = JSON.parse(sessionStorage.getItem(REPORTED_KEY));
+  } catch (err) {
+    /* storage unavailable: at worst a report shows twice */
+  }
+
+  function markReported(id) {
+    reported = id;
+    try {
+      sessionStorage.setItem(REPORTED_KEY, JSON.stringify(id));
+    } catch (err) {
+      /* see above */
+    }
+  }
+
+  jobReload.addEventListener("click", () => location.reload());
+  jobDismiss.addEventListener("click", () => strip.classList.add("hidden"));
+
+  function showRunning(job) {
+    strip.classList.remove("hidden", "problem");
+    jobReload.classList.add("hidden");
+    jobDismiss.classList.add("hidden");
+    const step = job.steps > 1 ? ` (step ${job.step_index} of ${job.steps})` : "";
+    jobMessage.textContent = (job.message || job.step || "Working") + step;
+    const counted = job.total !== null && job.total > 0;
+    jobBar.classList.remove("hidden");
+    jobBar.classList.toggle("indeterminate", !counted);
+    jobFill.style.width = counted
+      ? Math.round(100 * job.done / job.total) + "%" : "";
+    jobCount.textContent = counted ? `${job.done} / ${job.total}` : "";
+  }
+
+  /* What changed since the dashboard was loaded. Visits are what a sync
+     adds; topics and coordinates are what enrichment adds. */
+  function dataChanged(health) {
+    const loaded = state.loaded;
+    if (!loaded) return false;
+    const gaps = health.enrichment || {};
+    return health.visits !== loaded.visits ||
+      (gaps.topics_missing ?? loaded.unlabeled) < loaded.unlabeled ||
+      (gaps.coords_missing ?? loaded.noCoords) < loaded.noCoords;
+  }
+
+  async function showFinished(job) {
+    await booted;            // the comparison needs the loaded dashboard
+    let health = null;
+    try {
+      health = await (await fetch("/health")).json();
+    } catch (err) {
+      /* the strip still reports the job; there is just nothing to compare */
+    }
+    const problems = [...job.errors, ...((health && health.sync.errors) || [])];
+    const changed = health !== null && dataChanged(health);
+
+    if (changed && state.loaded && state.loaded.empty) {
+      location.reload();
+      return;
+    }
+    jobBar.classList.add("hidden");
+    jobCount.textContent = "";
+    strip.classList.toggle("problem", problems.length > 0);
+    if (problems.length) {
+      jobMessage.textContent = `Sync finished with ${problems.length} ` +
+        `problem${problems.length === 1 ? "" : "s"}` +
+        (changed ? "; new data is ready" : "");
+      jobMessage.title = problems.join("\n");
+    } else {
+      jobMessage.textContent = changed ? "New data is ready" : "Up to date";
+      jobMessage.title = "";
+    }
+    jobReload.classList.toggle("hidden", !changed);
+    jobDismiss.classList.remove("hidden");
+    strip.classList.remove("hidden");
+    if (!changed && !problems.length) {
+      setTimeout(() => strip.classList.add("hidden"), 3000);
+    }
+  }
+
+  async function pollJobs() {
+    let job = null;
+    try {
+      job = await (await fetch("/jobs")).json();
+    } catch (err) {
+      setTimeout(pollJobs, POLL_IDLE_MS);   // server busy or restarting
+      return;
+    }
+    if (job.status === "running") {
+      lastJobId = job.id;
+      showRunning(job);
+      setTimeout(pollJobs, POLL_RUNNING_MS);
+      return;
+    }
+    /* Report a job once, and only one this page saw running, or one that
+       finished between the page loading and the first poll (the launch
+       job when nothing needed doing). */
+    const finished = job.status === "done" || job.status === "failed";
+    // Job ids restart with each server, so the start time is part of the key.
+    const key = `${job.id}@${job.started_at}`;
+    if (finished && key !== reported &&
+        (job.id === lastJobId || lastJobId === null)) {
+      markReported(key);
+      showFinished(job);
+    }
+    lastJobId = job.id;
+    setTimeout(pollJobs, POLL_IDLE_MS);
+  }
+
   /* -- boot ---------------------------------------------------------------- */
   /* Every exit from boot() has to reach this, including the failures:
      an overlay that is never dismissed is a worse outcome than the frozen
@@ -353,6 +481,15 @@ window.WW = (function () {
     });
     state.topicColors["Unclassified"] = UNCLASSIFIED_COLOR;
 
+    /* Snapshot of what this page shows, for the job strip's "did anything
+       change?" check once a background sync or enrichment finishes. */
+    state.loaded = {
+      visits: data.summary.total_visits,
+      unlabeled: data.stats.topics.pages_unlabeled || 0,
+      noCoords: data.pages.filter(p => p.x === null || p.x === undefined).length,
+      empty: !data.pages.length,
+    };
+
     const s = data.summary;
     document.getElementById("summary-line").textContent =
       `${s.unique_pages} pages | ${s.total_visits} visits | ` +
@@ -371,14 +508,18 @@ window.WW = (function () {
       if (unlabeled) parts.push(`${unlabeled} pages have no topic yet`);
       if (noCoords) parts.push(`${noCoords} are missing map coordinates`);
       const warning = document.getElementById("data-warning");
-      warning.textContent = parts.join(", ") + " - run POST /enrich";
+      // The launcher enriches in the background after every sync, so this
+      // is a "still catching up" note rather than an instruction.
+      warning.textContent = parts.join(", ") +
+        " - they are added in the background after a sync";
       warning.classList.remove("hidden");
     }
 
     if (!data.pages.length) {
       document.getElementById("viz-message").textContent =
-        "No history ingested yet - run the extractor, then POST /ingest " +
-        "and /enrich.";
+        "No reading history yet. It is read from Chrome (and any Takeout " +
+        "folders) when the app syncs; the dashboard fills in when a sync " +
+        "finishes.";
       document.getElementById("viz-message").classList.remove("hidden");
       btnUmap.disabled = btnNet.disabled = true;
       finishLaunch();
@@ -409,14 +550,16 @@ window.WW = (function () {
       });
     } else {
       btnUmap.disabled = true;
-      btnUmap.title = "Run scripts/build_reference_space.py and POST " +
-        "/enrich to enable the UMAP view";
+      btnUmap.title = data.reference === null
+        ? "The map's reference space is not installed"
+        : "Map positions are still being added; they appear after the " +
+          "background enrichment finishes";
       setMode("network");   // builds the graph synchronously
       finishLaunch();
     }
   }
 
-  boot().catch(error => {
+  const booted = boot().catch(error => {
     // Without this the overlay would sit on "Launching..." forever, hiding
     // the one thing worth reporting.
     const message = document.getElementById("viz-message");
@@ -424,6 +567,7 @@ window.WW = (function () {
     message.classList.remove("hidden");
     finishLaunch();
   });
+  pollJobs();
 
   return { state, colorFor, hexToRgba, pageUrl, esc, topicLabel, GREY,
            showPopup, scheduleHidePopup, highlight,

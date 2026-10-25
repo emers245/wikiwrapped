@@ -120,13 +120,33 @@ CREATE TABLE IF NOT EXISTS umap_coords (
 """
 
 
+# How long a connection waits for another one's write lock before giving up
+# with "database is locked". Generous, because the longest writer is a sync
+# ingesting a first Takeout archive, and waiting beats failing a request.
+BUSY_TIMEOUT_S = 30
+
+
 def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
-    """Open (creating if needed) the app database with the schema applied."""
+    """Open (creating if needed) the app database with the schema applied.
+
+    WAL (write-ahead log) journal mode, because the launcher runs the sync
+    and enrichment as child processes WHILE the API serves the dashboard
+    from the same file. In SQLite's default rollback mode a writer
+    committing locks readers out, and a long reader blocks the writer; in
+    WAL mode readers never block the writer and the writer never blocks
+    readers. There is still only one writer at a time, which the job
+    runner's one-job rule and BUSY_TIMEOUT_S cover. The setting is stored
+    in the database file, so this is a no-op after the first connection.
+    WAL needs the -wal/-shm files beside the database on a local disk,
+    which the per-user data directory is.
+    """
     path = config.DB_PATH if db_path is None else db_path
     if str(path) != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_S)
     conn.row_factory = sqlite3.Row
+    if str(path) != ":memory:":
+        conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     return conn

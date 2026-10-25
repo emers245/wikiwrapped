@@ -206,6 +206,46 @@ def test_dashboard_reference_fractions_and_backdrop_limit(tmp_path):
         assert len(limited["reference"]["backdrop"]) == 2
 
 
+class FakeRunner:
+    """Stands in for jobs.JobRunner: records starts, never runs anything."""
+
+    def __init__(self):
+        self.started = []
+        self.busy = False
+
+    def start(self, name, steps):
+        if self.busy:
+            return False
+        self.started.append((name, [s.argv[-1] for s in steps]))
+        self.busy = True
+        return True
+
+    def snapshot(self):
+        return {"id": len(self.started),
+                "status": "running" if self.busy else "idle"}
+
+
+def test_jobs_endpoint_reports_the_runner(tmp_path):
+    test_app = api.create_app(db_path=tmp_path / "t.db",
+                              reference_dir=tmp_path / "none",
+                              job_runner=FakeRunner())
+    with TestClient(test_app) as test_client:
+        assert test_client.get("/jobs").json()["status"] == "idle"
+
+
+def test_sync_now_starts_a_forced_sync_then_refuses_a_second(tmp_path):
+    runner = FakeRunner()
+    test_app = api.create_app(db_path=tmp_path / "t.db",
+                              reference_dir=tmp_path / "none",
+                              job_runner=runner)
+    with TestClient(test_app) as test_client:
+        first = test_client.post("/jobs/sync")
+        assert first.status_code == 200 and first.json()["status"] == "running"
+        assert runner.started[0][0] == "sync"
+        assert runner.started[0][1][0] == "--force"      # ignores the interval
+        assert test_client.post("/jobs/sync").status_code == 409
+
+
 def test_enrich_composes_module_reports(client, monkeypatch):
     from app import embeddings, pageviews, topics, umap_space
 
