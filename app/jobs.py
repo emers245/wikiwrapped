@@ -41,6 +41,7 @@ import subprocess
 import sys
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import config
 from app import progress
@@ -61,6 +62,27 @@ class Step:
     argv: list[str]
 
 
+def child_python(executable: str | None = None, windows: bool | None = None) -> str:
+    """The Python interpreter the job children run under.
+
+    Normally the one running the app. The exception is the installed app on
+    Windows: its shortcut starts pythonw.exe, the windowless build, so that
+    no console appears. pythonw is meant for programs that have no console
+    streams at all, and the children talk to this process over stdout
+    (progress events, see app/progress.py), so they run under the ordinary
+    python.exe next to it. CREATE_NO_WINDOW (in _run_step) keeps that one
+    invisible too.
+    """
+    exe = Path(executable or sys.executable)
+    if windows is None:
+        windows = os.name == "nt"
+    if windows and exe.name.lower() == "pythonw.exe":
+        console = exe.with_name("python.exe")
+        if console.exists():
+            return str(console)
+    return str(exe)
+
+
 def sync_steps(force: bool = False, on_launch: bool = False,
                sync: bool = True, enrich: bool = True) -> list[Step]:
     """The standard job: sync every source, then enrich what is new.
@@ -68,7 +90,7 @@ def sync_steps(force: bool = False, on_launch: bool = False,
     Shared by the launcher (on launch) and the API (a "sync now" request),
     so both always run the same commands.
     """
-    python = sys.executable
+    python = child_python()
     steps = []
     if sync:
         flags = ["--force"] if force else (["--on-launch"] if on_launch else [])

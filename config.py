@@ -12,7 +12,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 APP_NAME = "WikipediaWrapped"
-APP_VERSION = "0.1"
+# The one place the version is set: the installers and the app's conda
+# package take it from here (packaging/build_installer.py), and a release's
+# git tag must be v<this>.
+APP_VERSION = "0.1.0"
 PROJECT_URL = "https://github.com/emers245/wikipedia-wrapped"
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,5 @@
+Wikipedia Wrapped is installed.
+
+To open it, press Command-Space, type Wikipedia Wrapped and press Return. It is also in the Applications folder inside your home folder (in Finder, choose Go > Home, then open Applications). Drag it to the Dock to keep it there.
+
+The first time it opens, it walks you through choosing where your reading history comes from.

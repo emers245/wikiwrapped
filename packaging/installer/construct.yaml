@@ -1,0 +1,110 @@
+# The Wikipedia Wrapped installers: a .pkg for macOS, an .exe for Windows.
+# Built by conda constructor, through packaging/build_installer.py, which
+# prepares everything referred to here and sets the WW_* variables; do not
+# run constructor on this file directly. packaging/README.md explains the
+# whole build.
+#
+# Lines ending in a [selector] apply to one platform only. Avoid ending any
+# other line with a [bracketed list]: constructor would read it as one.
+#
+# Per user, no admin rights, nothing changed outside the install folder and
+# the app's shortcut: no PATH changes, no "conda init", no registering
+# Python, no conda configuration. User data live elsewhere (the platform's
+# per-user data folder) and are never touched by installing, upgrading or
+# uninstalling.
+
+# constructor allows no spaces here (it also names the Windows uninstaller,
+# Uninstall-WikipediaWrapped.exe). The name people see comes from the
+# shortcut (packaging/menu), uninstall_name and the installer texts.
+name: WikipediaWrapped
+version: {{ environ["WW_VERSION"] }}
+company: Wikipedia Wrapped
+reverse_domain_identifier: io.github.emers245.wikipediawrapped
+
+# The packages: the locked runtime (packaging/locks/<platform>.txt), exact
+# to the build, plus the app itself as a local conda package
+# (packaging/recipe), written out together by build_installer.py.
+environment_file: {{ environ["WW_BUILD"] }}/environment.txt
+menu_packages:
+  - wikipedia-wrapped
+
+# Everything under WW_BUILD/extra is copied into the install folder at the
+# same relative path: the bundled model and reference space (into the code
+# folder's resources/), the pywebview wheels that post_install installs,
+# and on macOS the uninstaller. constructor copies single files only,
+# hence the loop.
+extra_files:
+{%- set extra = environ["WW_BUILD"] + "/extra" %}
+{%- for folder, subfolders, files in os.walk(extra) %}
+{%- for name in files %}
+  - {{ os.path.join(folder, name) | tojson }}: {{ os.path.relpath(os.path.join(folder, name), extra) | tojson }}
+{%- endfor %}
+{%- endfor %}
+
+pre_install: macos/pre_install.sh  # [osx]
+post_install: macos/post_install.sh  # [osx]
+pre_install: windows/pre_install.bat  # [win]
+post_install: windows/post_install.bat  # [win]
+
+initialize_conda: false
+register_python: false
+register_envs: false
+keep_pkgs: false
+
+# The locked packages need macOS 11 or later; checking up front gives a
+# clear message instead of a broken install.
+virtual_specs:  # [osx]
+  - __osx>=11  # [osx]
+
+# ----------------------------------------------------------------------------
+# macOS: a .pkg for "Just me" only, so it never asks for an admin password.
+# Each version gets its own folder, ~/Library/WikipediaWrapped-App/v<version>,
+# because the installer refuses to install into a folder that exists;
+# post_install.sh then removes older versions (an upgrade). The shortcut is
+# ~/Applications/Wikipedia Wrapped.app.
+# ----------------------------------------------------------------------------
+installer_type: pkg  # [osx]
+installer_filename: WikipediaWrapped-{{ environ["WW_VERSION"] }}-macOS-Intel.pkg  # [osx and x86_64]
+installer_filename: WikipediaWrapped-{{ environ["WW_VERSION"] }}-macOS-AppleSilicon.pkg  # [arm64]
+pkg_domains:  # [osx]
+  enable_anywhere: false  # [osx]
+  enable_currentUserHome: true  # [osx]
+  enable_localSystem: false  # [osx]
+default_location_pkg: Library/WikipediaWrapped-App  # [osx]
+pkg_name: v{{ environ["WW_VERSION"] }}  # [osx]
+install_path_exists_error_text: This version of Wikipedia Wrapped is already installed in {CHOSEN_PATH}. To reinstall it, first run the uninstaller described in the app's Help, then run this installer again. Your data are kept.  # [osx]
+progress_notifications: true  # [osx]
+welcome_image: ""  # [osx]
+welcome_file: macos/welcome.txt  # [osx]
+readme_text: ""  # [osx]
+conclusion_file: macos/conclusion.txt  # [osx]
+
+# ----------------------------------------------------------------------------
+# Windows: an NSIS .exe, "Just Me" by default (no admin prompt), into
+# %LOCALAPPDATA%\WikipediaWrapped-App\v<version>; pre_install.bat removes an
+# older version first (an upgrade). The installer adds its own uninstaller
+# and an entry in Settings > Apps > Installed apps.
+# ----------------------------------------------------------------------------
+installer_type: exe  # [win]
+installer_filename: WikipediaWrapped-{{ environ["WW_VERSION"] }}-Windows-x64.exe  # [win]
+default_prefix: '%LOCALAPPDATA%\WikipediaWrapped-App\v{{ environ["WW_VERSION"] }}'  # [win]
+default_prefix_domain_user: '%LOCALAPPDATA%\WikipediaWrapped-App\v{{ environ["WW_VERSION"] }}'  # [win]
+# Only if someone picks "All Users" (an administrator install). Upgrades of
+# such an install are not automatic: pre_install.bat looks at per-user
+# entries only.
+default_prefix_all_users: '%ALLUSERSPROFILE%\WikipediaWrapped-App\v{{ environ["WW_VERSION"] }}'  # [win]
+uninstall_name: Wikipedia Wrapped {{ environ["WW_VERSION"] }}  # [win]
+# A space in the Windows user name puts one in the install path; Python and
+# the app cope with that, so do not refuse such users.
+check_path_spaces: false  # [win]
+icon_image: ../icon/icon.png  # [win]
+welcome_image_text: Wikipedia Wrapped  # [win]
+header_image_text: Wikipedia Wrapped  # [win]
+# The first line is the title of the last page, the rest its text.
+conclusion_text: "Wikipedia Wrapped is installed\nOpen it from the Start menu or the shortcut on your desktop. The first time, it walks you through choosing where your reading history comes from."  # [win]
+
+# Code signing: deliberately unset for v1 (unsigned installers; see
+# packaging/README.md). Signing during the build would go here:
+# windows_signing_tool and its settings for Windows (or a service such as
+# SignPath signs the finished .exe in CI instead), signing_identity_name
+# and notarization_identity_name for macOS.

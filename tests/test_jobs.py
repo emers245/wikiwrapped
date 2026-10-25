@@ -186,6 +186,21 @@ def test_sync_steps_compose_the_standard_job():
     assert jobs.sync_steps(sync=False, enrich=False) == []
 
 
+def test_children_use_console_python_when_the_app_runs_windowless(tmp_path):
+    """The Windows shortcut runs pythonw.exe; the jobs need python.exe."""
+    pythonw = tmp_path / "pythonw.exe"
+    python = tmp_path / "python.exe"
+    pythonw.write_text("")
+    python.write_text("")
+    assert jobs.child_python(str(pythonw), windows=True) == str(python)
+    # Anything else is used as is: macOS and Linux, a console start on
+    # Windows, or a pythonw with no python.exe beside it.
+    assert jobs.child_python(str(pythonw), windows=False) == str(pythonw)
+    assert jobs.child_python(str(python), windows=True) == str(python)
+    python.unlink()
+    assert jobs.child_python(str(pythonw), windows=True) == str(pythonw)
+
+
 def _alive(pid):
     if os.name == "nt":
         import subprocess

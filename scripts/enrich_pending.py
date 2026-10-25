@@ -64,13 +64,26 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = storage.connect(config.DB_PATH)
     try:
+        if args.check:
+            gaps = storage.count_enrichment_gaps(conn)
+            stale = umap_space.coords_are_stale(conn, config.REFERENCE_DIR)
+            pending = gaps["topics_missing"] or gaps["coords_missing"] or stale
+            if pending:
+                detail = describe(gaps) or "none missing"
+                if stale:
+                    detail += "; map coordinates are from an older reference space"
+                print(f"Enrichment pending: {detail}.")
+            return 1 if pending else 0
+
+        # A new reference space (an app update can ship one) invalidates
+        # every stored map position; dropping them here turns that into
+        # ordinary missing coordinates, which the projection below fills.
+        dropped = umap_space.forget_stale_coords(conn, config.REFERENCE_DIR)
+        if dropped:
+            print(f"The map's reference space has changed: placing "
+                  f"{dropped} pages again.")
         gaps = storage.count_enrichment_gaps(conn)
         pending = gaps["topics_missing"] or gaps["coords_missing"]
-
-        if args.check:
-            if pending:
-                print(f"Enrichment pending: {describe(gaps)}.")
-            return 1 if pending else 0
 
         if not pending:
             print("Enrichment is up to date.")

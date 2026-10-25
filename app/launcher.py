@@ -6,6 +6,7 @@
     python -m app.launcher --force-sync    sync even if one ran recently
     python -m app.launcher --no-enrich     skip topic/map enrichment
     python -m app.launcher --port 8123     prefer a specific port
+    python -m app.launcher --self-test     check the installation, headless
 
 What happens, in order, and why:
 
@@ -382,11 +383,20 @@ def parse_args(argv=None):
                         help="skip topic and map enrichment of new pages")
     parser.add_argument("--debug", action="store_true",
                         help="enable the window's web inspector")
+    parser.add_argument("--self-test", action="store_true",
+                        help="check the installation without opening a "
+                             "window, then exit 0 (passed) or 1 (failed)")
     return parser.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.self_test:
+        # Before logging is set up: the self-test must not create anything
+        # in the user-data folder, not even a log file.
+        from app import selftest
+
+        return selftest.main()
     log_path = setup_logging()
     log.info(
         "Starting Wikipedia Wrapped %s (Python %s, %s %s)",

@@ -10,6 +10,8 @@
 #               installer (Milestone 3).
 # rattler-build builds the app's own code into a small local conda package,
 #               which is how menuinst shortcuts get installed (Milestone 3).
+# pillow        draws the placeholder icon and converts the icon source to
+#               .icns and .ico (packaging/icon/make_icons.py).
 # uv            resolves the pywebview wheels for each TARGET platform
 #               (packaging/lock_wheels.py). Plain pip cannot: it evaluates
 #               environment markers such as sys_platform == "darwin" against
@@ -26,4 +28,5 @@ dependencies:
   - conda-lock=4.0.3
   - constructor=3.17.3
   - rattler-build=0.77.0
+  - pillow=12.3.0
   - uv=0.13.5

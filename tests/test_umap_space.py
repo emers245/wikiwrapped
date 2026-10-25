@@ -83,6 +83,50 @@ def test_project_pages_stores_coords_and_reports_missing(conn, monkeypatch):
     }
 
 
+def test_a_new_reference_space_replaces_every_stored_coordinate(conn, tmp_path, monkeypatch):
+    """Coordinates from an older space are dropped and placed again.
+
+    This is what an app update shipping a rebuilt reference space looks
+    like to a user's database: pages already on the map, embeddings cached.
+    """
+    monkeypatch.setattr(umap_space, "load_reducer", lambda d=None: StubReducer())
+    space = tmp_path / "reference"
+    space.mkdir()
+    (space / umap_space.META_FILE).write_text('{"built_at": "v1"}')
+    add_embedded_page(conn, "Ant", 1)
+    add_embedded_page(conn, "Bee", 2)
+
+    assert umap_space.project_pages(conn, space)["pages_projected"] == 2
+    assert not umap_space.coords_are_stale(conn, space)
+    assert umap_space.forget_stale_coords(conn, space) == 0
+
+    # A different build: same pages, so only the projection is redone.
+    (space / umap_space.META_FILE).write_text('{"built_at": "v2"}')
+    assert umap_space.coords_are_stale(conn, space)
+    report = umap_space.project_pages(conn, space)
+    assert report["pages_projected"] == 2
+    assert report["pages_already_projected"] == 0
+    assert not umap_space.coords_are_stale(conn, space)
+
+
+def test_coords_without_a_recorded_space_count_as_stale(conn, tmp_path):
+    """Databases from before the fingerprint was recorded are placed again
+    once, since nothing says which space their coordinates came from."""
+    space = tmp_path / "reference"
+    space.mkdir()
+    (space / umap_space.META_FILE).write_text('{"built_at": "v1"}')
+    add_embedded_page(conn, "Ant", 1)
+    storage.upsert_umap_coords(conn, {"Ant": (1.0, 2.0)})
+    assert umap_space.coords_are_stale(conn, space)
+    assert umap_space.forget_stale_coords(conn, space) == 1
+    assert storage.get_umap_coords(conn) == {}
+
+    # No reference space at all: nothing to compare with, nothing dropped.
+    storage.upsert_umap_coords(conn, {"Ant": (1.0, 2.0)})
+    assert not umap_space.coords_are_stale(conn, tmp_path / "none")
+    assert umap_space.forget_stale_coords(conn, tmp_path / "none") == 0
+
+
 def test_missing_artifacts_point_at_build_script(tmp_path):
     with pytest.raises(FileNotFoundError, match="build_reference_space"):
         umap_space.load_reducer(tmp_path)

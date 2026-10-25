@@ -12,6 +12,8 @@ Tables (S6, plus redirect_cache supporting D5/D6):
   re-queried.
 - topic_cache, pageview_cache, embedding_cache, umap_coords: created here;
   their access helpers arrive with their modules (Steps 6-9).
+- app_state: small named values the app keeps about its own data, such as
+  which reference space the stored map coordinates were placed in.
 
 Connections are passed explicitly; callers own transaction commit.
 """
@@ -116,6 +118,11 @@ CREATE TABLE IF NOT EXISTS umap_coords (
     canonical_title TEXT PRIMARY KEY,
     x REAL NOT NULL,
     y REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -822,6 +829,30 @@ def get_umap_coords(conn: sqlite3.Connection) -> dict[str, tuple[float, float]]:
         row["canonical_title"]: (row["x"], row["y"])
         for row in conn.execute("SELECT canonical_title, x, y FROM umap_coords")
     }
+
+
+def count_umap_coords(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM umap_coords").fetchone()[0]
+
+
+def clear_umap_coords(conn: sqlite3.Connection) -> int:
+    """Delete every stored coordinate; returns how many there were."""
+    return conn.execute("DELETE FROM umap_coords").rowcount
+
+
+# ---------------------------------------------------------------------------
+# app_state
+# ---------------------------------------------------------------------------
+
+def get_app_state(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+    return None if row is None else row["value"]
+
+
+def set_app_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", (key, value)
+    )
 
 
 # ---------------------------------------------------------------------------
