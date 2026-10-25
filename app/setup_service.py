@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 
 import config
-from app import drive, folders, localconfig, sync
+from app import drive, folders, localconfig, storage, sync
 from extract import extract_history
 
 # A sign-in the user walks away from gives up after this long.
@@ -260,6 +260,27 @@ def set_sync(settings: dict, on_launch, min_interval_hours) -> dict:
     return localconfig.set_sync_preferences(settings, bool(on_launch), hours)
 
 
+def set_hidden_accounts(settings: dict, hidden) -> dict:
+    """Which accounts the dashboard leaves out. Nothing is deleted."""
+    if not isinstance(hidden, (list, tuple)):
+        raise SetupError("hidden_accounts must be a list of account names.")
+    settings.setdefault("dashboard", {})["hidden_accounts"] = list(
+        dict.fromkeys(str(account).strip() for account in hidden)
+    )
+    return settings
+
+
+def dashboard_accounts(conn, settings: dict) -> list[dict]:
+    """The accounts the "Show in dashboard" box lists, each marked shown or
+    hidden, from the database (not from the sync sources: an account whose
+    folder was removed still has history worth showing or hiding)."""
+    hidden = set(localconfig.hidden_accounts(settings))
+    return [
+        {**entry, "shown": entry["account"] not in hidden}
+        for entry in storage.account_summary(conn)
+    ]
+
+
 def set_drive(settings: dict, enabled: bool, drive_folder: str | None = None) -> dict:
     takeout = settings.setdefault("takeout", {})
     takeout["enabled"] = bool(enabled)
@@ -273,8 +294,9 @@ def apply(settings: dict, changes: dict) -> dict:
 
     Recognized keys, all optional: local {enabled, chrome_profiles},
     watched_folders [{path, label}], sync {on_launch, min_interval_hours},
-    takeout {enabled, drive_folder}. Everything is validated before the
-    caller saves, so a rejected change never leaves a half-written file.
+    takeout {enabled, drive_folder}, dashboard {hidden_accounts}.
+    Everything is validated before the caller saves, so a rejected change
+    never leaves a half-written file.
     """
     if not isinstance(changes, dict):
         raise SetupError("Settings must be sent as a JSON object.")
@@ -300,6 +322,8 @@ def apply(settings: dict, changes: dict) -> dict:
     if "takeout" in changes:
         takeout = changes["takeout"] or {}
         set_drive(settings, takeout.get("enabled", False), takeout.get("drive_folder"))
+    if "dashboard" in changes:
+        set_hidden_accounts(settings, (changes["dashboard"] or {}).get("hidden_accounts", []))
     return settings
 
 

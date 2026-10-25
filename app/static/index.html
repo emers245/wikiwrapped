@@ -23,6 +23,9 @@
   <button id="btn-panels" class="active" aria-expanded="true"
           aria-controls="panels" title="Hide summary panels">Panels</button>
   <div id="summary-line">loading...</div>
+  <!-- Shown only while some accounts are hidden from the dashboard, so a
+       smaller total never looks like lost history. Opens Settings. -->
+  <button id="filter-note" class="hidden" title="Choose accounts in Settings"></button>
   <div id="data-warning" class="hidden"></div>
   <button id="btn-settings" class="header-btn" title="Sources, sync, and accounts">Settings</button>
 </header>

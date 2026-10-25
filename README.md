@@ -481,6 +481,34 @@ app OAuth client. A folder that is already configured may be temporarily
 unreachable (an unplugged drive) without blocking a save. Opened with
 `--browser`, the native pickers become text fields.
 
+### Showing only some accounts
+
+Settings has two separate controls, on purpose. **Browser history**,
+**Google Takeout** and **Advanced** choose what the app *collects*. **Show in
+dashboard** chooses what the dashboard *shows*: one checkbox per account the
+database has history for (an email, a watched-folder label, or "No account
+recorded" for visits saved before accounts were tracked or from a profile
+that is not signed in), with each account's visits broken down by source.
+Unticking an account hides its visits everywhere (totals, map, network,
+panels) without deleting anything or pausing its sync; a header note says
+how many accounts are hidden and opens Settings. A visit two accounts both
+saw stays visible while either is shown.
+
+```toml
+[dashboard]
+hidden_accounts = ["work@example.com"]    # "" = no account recorded
+```
+
+A hidden list rather than a shown one, so an account that appears later
+shows up by default. The filter is one function,
+`storage.show_only_accounts`: it gives the dashboard's database connection
+temporary views named `visits` and `pages` (SQLite resolves an unqualified
+name to a TEMP object first), so every existing dashboard query sees only
+the shown accounts without being rewritten, and the totals, map, network
+and panels cannot disagree. Sync, ingest, enrichment, `/health` and
+Settings use unfiltered connections. Pageview lookups always use the whole
+history's date range, which is what their cache is keyed on.
+
 The API refuses requests a web page could make on your behalf: every
 request must be addressed to `127.0.0.1` or `localhost` (DNS rebinding), and
 a state-changing request carrying another site's `Origin` is rejected

@@ -282,6 +282,120 @@ def compact_visit_sources(conn: sqlite3.Connection) -> int:
     return conn.total_changes - before
 
 
+# ---------------------------------------------------------------------------
+# Accounts: which account saw each visit, and showing only some of them
+# ---------------------------------------------------------------------------
+
+# The account value for visits with no recorded account: provenance rows
+# with account '' (a local profile not signed in, early captures) and
+# visits with no provenance row at all (pre-log database history).
+UNATTRIBUTED = ""
+
+
+def account_summary(conn: sqlite3.Connection) -> list[dict]:
+    """Per account: distinct visits it saw, and how many came from each source.
+
+    Always reads the real tables (main.*), never a filtered view, because
+    this is what the "Show in dashboard" box lists, including the accounts
+    currently hidden. A visit seen by two accounts counts once for each, so
+    the rows can sum to more than the total.
+    """
+    out: dict[str, dict] = {}
+    for row in conn.execute(
+        """
+        SELECT account, source, COUNT(DISTINCT visit_id) AS n
+        FROM main.visit_sources GROUP BY account, source
+        """
+    ):
+        entry = out.setdefault(row["account"], {"account": row["account"],
+                                                "visits": 0, "by_source": {}})
+        entry["by_source"][row["source"]] = row["n"]
+    for row in conn.execute(
+        "SELECT account, COUNT(DISTINCT visit_id) AS n FROM main.visit_sources "
+        "GROUP BY account"
+    ):
+        out[row["account"]]["visits"] = row["n"]
+    orphans = conn.execute(
+        "SELECT COUNT(*) FROM main.visits WHERE id NOT IN "
+        "(SELECT visit_id FROM main.visit_sources)"
+    ).fetchone()[0]
+    if orphans:
+        entry = out.setdefault(UNATTRIBUTED, {"account": UNATTRIBUTED,
+                                              "visits": 0, "by_source": {}})
+        entry["visits"] += orphans
+        entry["by_source"]["no_record"] = orphans
+    return sorted(out.values(), key=lambda e: (e["account"] == UNATTRIBUTED,
+                                               -e["visits"], e["account"]))
+
+
+def show_only_accounts(conn: sqlite3.Connection, hidden: list[str]) -> None:
+    """Make this connection see only visits from accounts NOT in `hidden`.
+
+    How: SQLite resolves an unqualified table name to a TEMP object before
+    a main one, so two connection-local TEMP VIEWs named `visits` and
+    `pages` stand in for the real tables. Every existing query in stats,
+    network and the dashboard keeps saying "FROM visits" / "FROM pages" and
+    now gets the filtered rows, without a filter parameter being threaded
+    through each of them. That is the point: one definition of "shown", so
+    the totals, the map, the network and the panels can never disagree.
+
+    - A visit is shown if at least one account that is not hidden saw it.
+      A visit with no recorded account counts as UNATTRIBUTED.
+    - The `pages` view recomputes visit_count and first_seen from the
+      shown visits, and drops pages with none, so sizes and dates follow.
+    - Only for read-only connections (the dashboard's). A write through a
+      view fails with "cannot modify ... because it is a view", loudly
+      rather than silently, and the real tables (main.*) are untouched.
+
+    No-op when nothing is hidden, so the common case costs nothing.
+    """
+    hidden = list(dict.fromkeys(hidden or []))
+    if not hidden:
+        return
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS hidden_accounts "
+                 "(account TEXT PRIMARY KEY)")
+    conn.execute("DELETE FROM temp.hidden_accounts")
+    conn.executemany("INSERT INTO temp.hidden_accounts VALUES (?)",
+                     [(account,) for account in hidden])
+    conn.executescript(
+        """
+        DROP VIEW IF EXISTS temp.pages;
+        DROP VIEW IF EXISTS temp.visits;
+        CREATE TEMP VIEW visits AS
+        SELECT v.* FROM main.visits AS v
+        WHERE EXISTS (
+                SELECT 1 FROM main.visit_sources AS s
+                WHERE s.visit_id = v.id
+                  AND s.account NOT IN (SELECT account FROM temp.hidden_accounts))
+           OR (NOT EXISTS (SELECT 1 FROM main.visit_sources AS s
+                           WHERE s.visit_id = v.id)
+               AND '' NOT IN (SELECT account FROM temp.hidden_accounts));
+        CREATE TEMP VIEW pages AS
+        SELECT p.id, p.canonical_title, p.raw_title,
+               MIN(v.timestamp) AS first_seen, COUNT(v.id) AS visit_count
+        FROM main.pages AS p JOIN temp.visits AS v ON v.page_id = p.id
+        GROUP BY p.id;
+        """
+    )
+
+
+def count_all_visits(conn: sqlite3.Connection) -> int:
+    """Every visit, ignoring any account filter on this connection."""
+    return conn.execute("SELECT COUNT(*) FROM main.visits").fetchone()[0]
+
+
+def full_visit_date_range(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
+    """First and last visit over ALL accounts, ignoring any filter.
+
+    Pageview counts are cached per date range (D7), keyed on the range of
+    the whole history; looking them up with a filtered range would miss.
+    """
+    row = conn.execute(
+        "SELECT MIN(timestamp), MAX(timestamp) FROM main.visits"
+    ).fetchone()
+    return row[0], row[1]
+
+
 def visits_without_provenance(conn: sqlite3.Connection) -> list[dict]:
     """Visits with no visit_sources row: present in the DB but not the log.
 

@@ -108,6 +108,22 @@ def create_app(
         finally:
             conn.close()
 
+    def get_shown_db():
+        """A connection that sees only the accounts the dashboard shows.
+
+        For the read-only views (dashboard, stats, map, network, page
+        detail). Health, ingest, enrichment and settings use get_db and so
+        always see everything. See storage.show_only_accounts.
+        """
+        conn = storage.connect(db_path)
+        try:
+            storage.show_only_accounts(
+                conn, localconfig.hidden_accounts(localconfig.load())
+            )
+            yield conn
+        finally:
+            conn.close()
+
     def validate_tz(tz: str | None) -> str | None:
         try:
             config.get_timezone(tz)
@@ -123,7 +139,7 @@ def create_app(
 
     @app.get("/dashboard")
     def dashboard(
-        backdrop_limit: int = Query(10_000, ge=0), conn=Depends(get_db)
+        backdrop_limit: int = Query(10_000, ge=0), conn=Depends(get_shown_db)
     ):
         """Everything the frontend needs in one load, so hover interactions
         never wait on the network."""
@@ -175,6 +191,12 @@ def create_app(
 
         return {
             "summary": stats.summary(conn),
+            # What is being left out, so the page can say so (and compare
+            # /health's unfiltered totals against the right number).
+            "filter": {
+                "hidden_accounts": localconfig.hidden_accounts(localconfig.load()),
+                "visits_all": storage.count_all_visits(conn),
+            },
             "session_gap_s": graph["session_gap_s"],
             "pages": pages,
             "edges": graph["edges"],
@@ -280,9 +302,18 @@ def create_app(
     def bad_request(exc: setup_service.SetupError):
         return HTTPException(400, str(exc))
 
+    def settings_view(settings: dict, conn) -> dict:
+        """setup_service.status plus the accounts found in the database,
+        for the "Show in dashboard" box."""
+        view = setup_service.status(settings)
+        view["dashboard"] = {
+            "accounts": setup_service.dashboard_accounts(conn, settings),
+        }
+        return view
+
     @app.get("/settings")
-    def get_settings():
-        return setup_service.status(localconfig.load())
+    def get_settings(conn=Depends(get_db)):
+        return settings_view(localconfig.load(), conn)
 
     @app.get("/settings/chrome-profiles")
     def get_chrome_profiles():
@@ -290,7 +321,7 @@ def create_app(
         return setup_service.chrome_profiles(localconfig.load())
 
     @app.put("/settings")
-    def put_settings(changes: dict = Body(...)):
+    def put_settings(changes: dict = Body(...), conn=Depends(get_db)):
         """Save the Settings screen (or the first-run answers) in one go.
 
         Validated in full before anything is written, so a rejected change
@@ -303,7 +334,7 @@ def create_app(
         except setup_service.SetupError as exc:
             raise bad_request(exc)
         localconfig.save(settings)
-        return setup_service.status(settings)
+        return settings_view(settings, conn)
 
     @app.post("/settings/folders/inspect")
     def inspect_folder(body: dict = Body(...)):
@@ -348,38 +379,38 @@ def create_app(
     # -- stats (S7.3) ------------------------------------------------------
 
     @app.get("/stats/summary")
-    def stats_summary(conn=Depends(get_db)):
+    def stats_summary(conn=Depends(get_shown_db)):
         return stats.summary(conn)
 
     @app.get("/stats/top")
-    def stats_top(n: int = Query(10, ge=1, le=500), conn=Depends(get_db)):
+    def stats_top(n: int = Query(10, ge=1, le=500), conn=Depends(get_shown_db)):
         return stats.most_visited(conn, n)
 
     @app.get("/stats/heatmap")
-    def stats_heatmap(tz: str | None = None, conn=Depends(get_db)):
+    def stats_heatmap(tz: str | None = None, conn=Depends(get_shown_db)):
         return stats.weekday_hour_grid(conn, validate_tz(tz))
 
     @app.get("/stats/daily")
-    def stats_daily(tz: str | None = None, conn=Depends(get_db)):
+    def stats_daily(tz: str | None = None, conn=Depends(get_shown_db)):
         return stats.daily_series(conn, validate_tz(tz))
 
     @app.get("/stats/busiest-week")
-    def stats_busiest_week(tz: str | None = None, conn=Depends(get_db)):
+    def stats_busiest_week(tz: str | None = None, conn=Depends(get_shown_db)):
         return stats.busiest_week(conn, validate_tz(tz))
 
     @app.get("/stats/topics")
-    def stats_topics(conn=Depends(get_db)):
+    def stats_topics(conn=Depends(get_shown_db)):
         return stats.topic_distribution(conn)
 
     # -- map + page detail -------------------------------------------------
 
     @app.get("/map")
-    def map_points(conn=Depends(get_db)):
+    def map_points(conn=Depends(get_shown_db)):
         return storage.get_map_points(conn)
 
     @app.get("/network")
     def network_graph(
-        gap: int = Query(network.DEFAULT_GAP_S, ge=1), conn=Depends(get_db)
+        gap: int = Query(network.DEFAULT_GAP_S, ge=1), conn=Depends(get_shown_db)
     ):
         return network.graph_metrics(conn, gap)
 
@@ -389,7 +420,7 @@ def create_app(
         return page.read_text(encoding="utf-8")
 
     @app.get("/pages/{title:path}")
-    def page_detail(title: str, conn=Depends(get_db)):
+    def page_detail(title: str, conn=Depends(get_shown_db)):
         page = storage.get_page(conn, title)
         if page is None:  # accept underscore form too
             page = storage.get_page(conn, title.replace("_", " "))

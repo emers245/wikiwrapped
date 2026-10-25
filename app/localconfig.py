@@ -61,6 +61,14 @@ DEFAULTS: dict = {
     # Folders scanned for Takeout zips, as [{path, label}]. The label stands
     # in for the account, because a zip on disk does not say whose it is.
     "watched_folders": [],
+    # What the dashboard shows. Accounts listed here are hidden; their
+    # visits stay in the log and the database. A HIDDEN list rather than a
+    # shown one, so an account that appears later (a new Takeout folder
+    # label, a new Chrome profile) shows up by default instead of silently
+    # missing. "" is the unattributed group (visits with no account).
+    "dashboard": {
+        "hidden_accounts": [],
+    },
     # The Drive/OAuth route is opt-in and stays off unless set up.
     "takeout": {
         "enabled": False,
@@ -82,6 +90,14 @@ DEFAULTS: dict = {
         "chrome_profiles": [],
     },
 }
+
+
+def hidden_accounts(settings: dict) -> list[str]:
+    """Accounts whose visits the dashboard leaves out ("" = no account)."""
+    raw = settings.get("dashboard", {}).get("hidden_accounts", [])
+    if isinstance(raw, str):            # tolerate a hand-edited bare string
+        raw = [raw]
+    return list(dict.fromkeys(str(account).strip() for account in raw))
 
 
 def local_enabled(settings: dict) -> bool:

@@ -396,6 +396,19 @@ body.resizing .slider-fill { cursor: grabbing; }
   #summary-line { display: none; }
 }
 
+/* -- account filter note ------------------------------------------------ */
+/* A footnote to the summary line while accounts are hidden: same quiet
+   amber as #data-warning, but a button, because it opens Settings. */
+#filter-note {
+  font-size: 12px;
+  color: #a8763f;
+  background: #f7efe2;
+  border: 1px solid #e6d6bb;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
 /* -- header buttons (Settings, Help) ------------------------------------- */
 /* The same quiet style as the Panels toggle in its "off" state. */
 .header-btn {

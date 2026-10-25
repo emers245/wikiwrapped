@@ -121,7 +121,14 @@ window.WWsetup = (function () {
       },
       // Directories ticked in the profile list; filled once profiles load.
       selected: null,
+      // Accounts left out of the dashboard ("" = no account recorded).
+      hidden: new Set(current.dashboard.accounts
+        .filter(a => !a.shown).map(a => a.account)),
     };
+  }
+
+  function hiddenList() {
+    return [...draft.hidden].sort();
   }
 
   /* The profile checkboxes, turned into what /settings expects:
@@ -142,6 +149,7 @@ window.WWsetup = (function () {
     };
     const local = localChanges();
     if (local) out.local = local;
+    out.dashboard = { hidden_accounts: hiddenList() };
     return out;
   }
 
@@ -183,11 +191,69 @@ window.WWsetup = (function () {
         "your history comes from."));
   }
 
+  /* The words for where an account's visits came from. */
+  const SOURCE_NAMES = {
+    chrome_local: "Chrome on this computer",
+    takeout: "Google Takeout",
+    legacy_db: "recovered from the old database",
+    no_record: "saved before sources were recorded",
+  };
+
+  function accountName(account) {
+    return account === "" ? "No account recorded" : account;
+  }
+
+  function sectionShown() {
+    const accounts = status.dashboard.accounts;
+    const section = el("div", { class: "setup-section" },
+      el("p", {}, "Choose whose reading the dashboard shows. This only " +
+        "changes what you see: nothing is deleted, syncing carries on, and " +
+        "ticking an account again brings all of it back."));
+    if (!accounts.length) {
+      section.append(el("p", { class: "setup-muted" },
+        "No history yet. Accounts appear here after the first sync."));
+      return section;
+    }
+    const list = el("div", { class: "setup-list" });
+    for (const entry of accounts) {
+      const parts = Object.entries(entry.by_source)
+        .sort((a, b) => b[1] - a[1])
+        .map(([source, n]) => `${n.toLocaleString()} from ${SOURCE_NAMES[source] || source}`);
+      list.append(el("label", { class: "setup-check" },
+        el("input", {
+          type: "checkbox",
+          checked: !draft.hidden.has(entry.account),
+          onchange: event => {
+            if (event.target.checked) draft.hidden.delete(entry.account);
+            else draft.hidden.add(entry.account);
+          },
+        }),
+        el("span", {},
+          el("strong", {}, accountName(entry.account)),
+          el("span", { class: "setup-muted" },
+            ` - ${entry.visits.toLocaleString()} visit${entry.visits === 1 ? "" : "s"}` +
+            (parts.length ? ` (${parts.join(", ")})` : "")))));
+    }
+    section.append(list);
+    section.append(el("p", { class: "setup-muted" }, "A visit that two " +
+      "accounts both saw (say, through Chrome and through Takeout) counts " +
+      "under each, so these can add up to more than your total. It stays " +
+      "visible while either account is shown. \"No account recorded\" is " +
+      "history saved before the app tracked accounts, or from a Chrome " +
+      "profile that is not signed in."));
+    return section;
+  }
+
   function sectionProfiles() {
     const section = el("div", { class: "setup-section" },
       el("p", {}, "Wikipedia Wrapped reads Google Chrome's history on this " +
         "computer. Chrome keeps about 90 days of history, so the app saves " +
         "a copy of the Wikipedia visits each time it syncs."));
+    if (mode === "settings") {
+      section.append(el("p", { class: "setup-muted" }, "These choose what " +
+        "the app collects. To hide an account's history from the dashboard " +
+        "without stopping its sync, use \"Show in dashboard\" above."));
+    }
     if (profilesError) {
       section.append(el("p", { class: "setup-problem" },
         "Could not look for Chrome profiles: " + profilesError));
@@ -557,6 +623,8 @@ window.WWsetup = (function () {
       stepEl.textContent = "";
       const problems = sectionProblems();
       if (problems) body.append(problems);
+      body.append(el("h3", { class: "setup-section-title" }, "Show in dashboard"),
+                  sectionShown());
       for (const step of STEPS) {
         if (step.wizardOnly) continue;
         body.append(el("h3", { class: "setup-section-title" }, step.title), step.build());
@@ -574,6 +642,8 @@ window.WWsetup = (function () {
   }
 
   async function syncNow() {
+    const hiddenBefore = JSON.stringify(
+      status.dashboard.accounts.filter(a => !a.shown).map(a => a.account).sort());
     try {
       await save();
       await api("POST", "/jobs/sync");
@@ -582,12 +652,16 @@ window.WWsetup = (function () {
       return;
     }
     close();
-    if (window.WW && WW.pollJobsNow) WW.pollJobsNow();
+    // A reload picks the running job straight back up in the job strip.
+    if (JSON.stringify(hiddenList()) !== hiddenBefore) location.reload();
+    else if (window.WW && WW.pollJobsNow) WW.pollJobsNow();
   }
 
   async function next() {
     if (busy) return;
     if (mode === "settings") {
+      const hiddenBefore = JSON.stringify(
+        status.dashboard.accounts.filter(a => !a.shown).map(a => a.account).sort());
       try {
         await save();
       } catch (err) {
@@ -595,6 +669,9 @@ window.WWsetup = (function () {
         return;
       }
       close();
+      // The dashboard is built once from /dashboard; showing a different
+      // set of accounts means building it again.
+      if (JSON.stringify(hiddenList()) !== hiddenBefore) location.reload();
       return;
     }
     if (stepIndex < STEPS.length - 1) {

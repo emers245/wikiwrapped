@@ -518,11 +518,24 @@ window.WW = (function () {
     /* Snapshot of what this page shows, for the job strip's "did anything
        change?" check once a background sync or enrichment finishes. */
     state.loaded = {
-      visits: data.summary.total_visits,
+      // Unfiltered, like /health's count, so hiding accounts is never
+      // mistaken for new data arriving.
+      visits: data.filter ? data.filter.visits_all : data.summary.total_visits,
       unlabeled: data.stats.topics.pages_unlabeled || 0,
       noCoords: data.pages.filter(p => p.x === null || p.x === undefined).length,
       empty: !data.pages.length,
     };
+
+    const hidden = (data.filter && data.filter.hidden_accounts) || [];
+    if (hidden.length) {
+      const note = document.getElementById("filter-note");
+      note.textContent = `Hiding ${hidden.length} account${hidden.length === 1 ? "" : "s"}`;
+      note.title = "Hidden from the dashboard: " +
+        hidden.map(a => a === "" ? "no account recorded" : a).join(", ") +
+        ". Click to choose in Settings.";
+      note.classList.remove("hidden");
+      note.addEventListener("click", () => window.WWsetup && WWsetup.open("settings"));
+    }
 
     const s = data.summary;
     document.getElementById("summary-line").textContent = s.total_visits
@@ -551,10 +564,13 @@ window.WW = (function () {
     }
 
     if (!data.pages.length) {
-      document.getElementById("viz-message").textContent =
-        "No reading history yet. It is read from Chrome (and any Takeout " +
-        "folders) when the app syncs; the dashboard fills in when a sync " +
-        "finishes. Sources and syncing are in Settings.";
+      document.getElementById("viz-message").textContent = hidden.length &&
+        data.filter.visits_all
+        ? "Every account with history is hidden from the dashboard. " +
+          "Choose which to show in Settings."
+        : "No reading history yet. It is read from Chrome (and any Takeout " +
+          "folders) when the app syncs; the dashboard fills in when a sync " +
+          "finishes. Sources and syncing are in Settings.";
       document.getElementById("viz-message").classList.remove("hidden");
       btnUmap.disabled = btnNet.disabled = true;
       finishLaunch();
