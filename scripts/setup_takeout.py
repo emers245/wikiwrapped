@@ -151,7 +151,8 @@ def choose_profiles(settings: dict) -> dict:
     print("-" * 42)
     for index, profile in enumerate(profiles, 1):
         visits = profile["wikipedia_visits"]
-        shown = "unreadable" if visits is None else f"{visits} Wikipedia visits"
+        shown = ("unreadable" if visits is None
+                 else f"{visits} Wikipedia visits still in Chrome")
         account = f"  {profile['account']}" if profile["account"] else ""
         print(f"  {index}. {profile['display_name']} "
               f"[{profile['directory']}]{account}\n     {shown}")

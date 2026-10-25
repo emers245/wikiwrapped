@@ -30,7 +30,7 @@ else (D9). Hence these rules, every one of which a test pins down:
   opened in place (even a read-only open can create files beside it); it
   is snapshotted to a temp dir first, see _db_snapshot.
 - NOTHING AUTOMATIC. The app never calls this. It only warns, via
-  legacy_status(), that unmigrated data exists.
+  legacy_status(), that unmigrated data exist.
 
 The reference space under data/reference/ is not user data (it is a
 read-only app resource) and is never copied.

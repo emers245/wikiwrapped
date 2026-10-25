@@ -163,7 +163,7 @@ window.WWsetup = (function () {
       el("p", {}, "Wikipedia Wrapped shows what you have been reading on " +
         "Wikipedia: a map of the topics, the paths between articles, and " +
         "when you read them."),
-      el("h3", {}, "Your data stays on this computer"),
+      el("h3", {}, "Your data stay on this computer"),
       el("p", {}, "The app reads your Chrome history, and any Google " +
         "Takeout archives you point it to, keeps only the Wikipedia visits, " +
         "and stores them here:"),
@@ -214,7 +214,7 @@ window.WWsetup = (function () {
     for (const profile of profiles) {
       const visits = profile.wikipedia_visits === null
         ? "could not be read right now"
-        : `${profile.wikipedia_visits} Wikipedia visit${profile.wikipedia_visits === 1 ? "" : "s"}`;
+        : `${profile.wikipedia_visits} Wikipedia visit${profile.wikipedia_visits === 1 ? "" : "s"} still in Chrome`;
       list.append(el("label", { class: "setup-check" },
         el("input", {
           type: "checkbox",
@@ -230,6 +230,12 @@ window.WWsetup = (function () {
           el("span", { class: "setup-muted" }, ` - ${visits}`))));
     }
     section.append(list);
+    // These counts are what Chrome holds today, not what the app has saved,
+    // and the two differ by design; say so before someone adds them up.
+    section.append(el("p", { class: "setup-muted" }, "Counts are what Chrome " +
+      "still holds (about the last 90 days). The app keeps the older visits " +
+      "it has already saved, and Google Takeout can add history from your " +
+      "other devices, so your dashboard total is usually larger."));
     return section;
   }
 
@@ -471,7 +477,7 @@ window.WWsetup = (function () {
         el("span", { class: "setup-muted" }, "Saves these settings, then syncs " +
           "every source, ignoring the wait above.")));
       section.append(
-        el("h3", {}, "Where your data is"),
+        el("h3", {}, "Where your data are"),
         el("p", {}, "Data: ", el("span", { class: "setup-path" }, status.paths.user_data)),
         el("p", {}, "Logs: ", el("span", { class: "setup-path" }, status.paths.logs)));
     }

@@ -52,7 +52,9 @@ def chrome_profiles(settings: dict, count_visits: bool = True) -> list[dict]:
     """Detected Chrome profiles, each marked selected or not.
 
     count_visits reads each profile's History database (a temp copy, so it
-    works while Chrome is open) to show how many Wikipedia visits it holds;
+    works while Chrome is open) to show how many Wikipedia visits it holds.
+    That is what Chrome still has (about the last 90 days), not what the
+    app has saved over time, so it is normally smaller than the dashboard;
     that is a second or so per profile, which is why the API serves it from
     its own endpoint. An unreadable profile reports None, not an error.
     """

@@ -423,10 +423,10 @@ window.WW = (function () {
     if (problems.length) {
       jobMessage.textContent = `Sync finished with ${problems.length} ` +
         `problem${problems.length === 1 ? "" : "s"}` +
-        (changed ? "; new data is ready" : "");
+        (changed ? "; new data are ready" : "");
       jobMessage.title = problems.join("\n");
     } else {
-      jobMessage.textContent = changed ? "New data is ready" : "Up to date";
+      jobMessage.textContent = changed ? "New data are ready" : "Up to date";
       jobMessage.title = "";
     }
     jobReload.classList.toggle("hidden", !changed);

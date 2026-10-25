@@ -39,7 +39,7 @@ import config
 # an entire synced Drive on every launch.
 MAX_DEPTH = 4
 
-# macOS marks a File Provider placeholder whose data is not on disk with the
+# macOS marks a File Provider placeholder whose data are not on disk with the
 # SF_DATALESS flag in st_flags. Python's stat module only names it from 3.13,
 # so the value from <sys/stat.h> is spelled out here.
 _SF_DATALESS = 0x40000000
@@ -153,7 +153,7 @@ def archive_key(path: Path, stat: os.stat_result | None = None) -> tuple[str, st
 
 
 def looks_cloud_only(stat: os.stat_result) -> bool:
-    """Best-effort: is this a cloud placeholder whose data is not local?
+    """Best-effort: is this a cloud placeholder whose data are not local?
 
     Used only to make a read failure's message helpful ("make the folder
     available offline"), never to decide whether to try reading: a
