@@ -39,7 +39,7 @@ Each step ends with a concrete verification. Steps follow the spec's ordering (S
 
 - Create the repo layout from S4, plus `pageviews.py` and `data/` dirs (`data/` git-ignored except `.gitkeep`; `reference_code/` left untouched).
 - `environment.yml` (conda, pinned): Python 3.11, `numpy` pinned to a numba-compatible version, `umap-learn`, `numba`/`llvmlite`, `sentence-transformers` (CPU torch), `pandas`, `requests`, `fastapi`, `uvicorn`, `pytest`, `httpx` (for TestClient), `tzlocal`. SQLite needs no dependency.
-- `config.py`: DB path, `data/reference/` paths, `Api-User-Agent` string with contact email (`WikipediaWrapped/0.1 (emerjoe1779@gmail.com)`), timezone default (`tzlocal` detection with optional override constant), API base URLs, request throttle/backoff settings.
+- `config.py`: DB path, `data/reference/` paths, `Api-User-Agent` string with contact email (`WikipediaWrapped/0.1 (emailname@host.com)`), timezone default (`tzlocal` detection with optional override constant), API base URLs, request throttle/backoff settings.
 - **Verify:** `conda env create` succeeds; a smoke-test script imports `umap`, `numba`, `sentence_transformers`, `fastapi`, `sqlite3` (S9 requirement). Nothing else proceeds until this passes.
 
 ### Step 2 - `normalize.py` + tests (D5, highest risk, built first)
