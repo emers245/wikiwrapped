@@ -4,7 +4,10 @@ Wikipedia Wrapped shows what you have been reading on Wikipedia: a map of
 the topics you read about, the paths you took from one article to the
 next, and when you read them. It builds all of this from your own browsing
 history (Google Chrome, and optionally Google Takeout archives), on your
-own computer: your history never leaves it.
+own computer. Your history stays there: the only thing sent anywhere is
+the titles of the Wikipedia articles you visited, to Wikipedia itself, to
+look up their topics (the app's Help, "what leaves your computer", has the
+details).
 
 ## Download and install
 
