@@ -1,11 +1,11 @@
 {
-  "articles": 1989,
-  "asset": "reference-space-v0.tar.gz",
+  "articles": 39794,
+  "asset": "reference-space-v1.tar.gz",
   "embedding_model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
   "repo": "emers245/wikipedia-wrapped",
-  "sha256": "fbd7bc148ceba205269b09be1cac5d1008b284ebb6101d1463fd1247c550f588",
-  "size": 3318781,
-  "tag": "reference-v0",
+  "sha256": "53d758a8252abc25e28eb3f60c42da8be7801cdcfddffbc12192f5edb15e5b65",
+  "size": 212247353,
+  "tag": "reference-v1",
   "versions": {
     "llvmlite": "0.43.0",
     "numba": "0.60.0",
