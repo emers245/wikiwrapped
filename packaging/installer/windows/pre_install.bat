@@ -14,8 +14,10 @@ rem new shortcuts exist matters: they have the same names.
 rem
 rem The PowerShell below is written without double quotes inside it
 rem ([char]34 is one), because cmd would end the quoted command there.
+rem PowerShell is called by its full path: the installer runs this script
+rem with a reduced PATH that leaves PowerShell's folder out.
 
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference = 'Stop';" ^
   "$keys = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall';" ^
   "foreach ($key in Get-ChildItem $keys -ErrorAction SilentlyContinue) {" ^
