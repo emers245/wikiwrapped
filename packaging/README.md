@@ -400,7 +400,7 @@ macOS quarantines it like a user's download:
    then preparing the libraries); notifications report progress.
 3. The last page says how to open the app. Press Command-Space, type
    Wikipedia Wrapped, press Return. The window should appear within a few
-   seconds, and the Dock should show the gift icon and "Wikipedia
+   seconds, and the Dock should show the app's icon and "Wikipedia
    Wrapped" (not "python").
 4. Go through the first-run setup and let the first sync finish. Check
    Help opens, with its screenshots.
@@ -415,11 +415,19 @@ macOS quarantines it like a user's download:
 
 ### The icon
 
-`packaging/icon/icon.png` is a placeholder (a gift box, drawn by
-`make_icons.py --placeholder`). To use a real one, replace that file with
-a square PNG, ideally 1024 x 1024 with a transparent margin (macOS icons
-sit inside a rounded square), and rebuild. The `.icns` and `.ico` are
-generated on every build and never committed.
+`packaging/icon/icon.png` is the app's logo
+(`app/static/logo/WikiWrapped_Logo.png`) centered on a white rounded
+square, the shape of a macOS app icon; the white plate keeps a line
+drawing visible on the dark Dock. After changing the logo, redo it with
+
+```bash
+conda run -n wikipedia-wrapped-build python packaging/icon/make_icons.py \
+    --compose app/static/logo/WikiWrapped_Logo.png
+```
+
+or replace `icon.png` with a finished square design (1024 x 1024, with a
+transparent margin). The `.icns` and `.ico` are generated from it on
+every build and never committed.
 
 ### Signing, later
 
