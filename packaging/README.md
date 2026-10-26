@@ -506,10 +506,10 @@ the caches warm:
 |---|---|---|
 | Check the version | under 1 | 1 |
 | macOS Apple Silicon | 4.5 | 50 |
-| macOS Intel | 11-12 (17 with an empty cache) | 120 (170) |
+| macOS Intel | 11-13 (17 with an empty cache) | 120-140 (170) |
 | Windows x64 | about 26 | about 52 |
 | Draft the release | under 1 | 1 |
-| **One full run** | | **about 225** |
+| **One full run** | | **about 225-245** |
 
 So the free allowance covers about eight full runs a month; a failed job
 stops early and costs less. Most of it is the Intel Mac. Making the
