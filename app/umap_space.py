@@ -14,6 +14,9 @@ ported from the old exploratory fit that produced good topic separation.
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import io
 import json
 import logging
 import os
@@ -67,7 +70,12 @@ def load_reducer(reference_dir: str | Path | None = None):
     if "NUMBA_CACHE_DIR" not in os.environ:
         numba_cache.mkdir(parents=True, exist_ok=True)
         os.environ["NUMBA_CACHE_DIR"] = str(numba_cache)
-    with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle:
+    # The nearest-neighbor index inside the reducer rebuilds its search
+    # function while being unpickled, announcing it on stdout ("Building and
+    # compiling search function") because it was fitted verbose; that line
+    # is dropped rather than reaching the app log.
+    with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle, \
+            contextlib.redirect_stdout(io.StringIO()):
         reducer = pickle.load(handle)
     # The build fits with verbose=True for its own console, and that choice
     # is pickled with the reducer twice over: the verbose flag (epoch
@@ -77,6 +85,10 @@ def load_reducer(reference_dir: str | Path | None = None):
     reducer.verbose = False
     if isinstance(getattr(reducer, "tqdm_kwds", None), dict):
         reducer.tqdm_kwds["disable"] = True
+    # ...and the index keeps a verbose flag of its own, for later rebuilds.
+    index = getattr(reducer, "_knn_search_index", None)
+    if index is not None and hasattr(index, "verbose"):
+        index.verbose = False
     return reducer
 
 
@@ -93,14 +105,75 @@ def load_meta(reference_dir: str | Path | None = None) -> dict:
     )
 
 
+# app_state key recording which reference space the stored coordinates
+# were placed in (reference_id below).
+COORDS_REFERENCE_KEY = "umap_coords.reference_id"
+
+
+def reference_id(reference_dir: str | Path | None = None) -> str | None:
+    """A fingerprint of the reference space, or None if there is none.
+
+    The sha256 of reference_meta.json. Every build writes a new one (it
+    records the build time and article count), it ships with the space,
+    and it is tiny, whereas hashing the reducer itself (about 250 MB at
+    full scale) would add a second to every enrichment.
+    """
+    path = Path(reference_dir or config.REFERENCE_DIR) / META_FILE
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
+def coords_are_stale(
+    conn: sqlite3.Connection, reference_dir: str | Path | None = None
+) -> bool:
+    """True if the stored coordinates belong to a different reference space.
+
+    Coordinates only mean something relative to the reducer that made them.
+    A new reference space (a full build replacing a test build, or an app
+    update shipping a rebuilt space) moves every reference point, so pages
+    placed in the old one would sit in the wrong neighborhoods. Coordinates
+    stored before this was recorded carry no fingerprint and count as stale.
+    """
+    current = reference_id(reference_dir)
+    if current is None or storage.get_app_state(conn, COORDS_REFERENCE_KEY) == current:
+        return False
+    return storage.count_umap_coords(conn) > 0
+
+
+def forget_stale_coords(
+    conn: sqlite3.Connection, reference_dir: str | Path | None = None
+) -> int:
+    """Drop coordinates placed in another reference space; returns how many.
+
+    project_pages only places pages that have no coordinates, so without
+    this, stale ones would stay forever. Dropping them makes it place every
+    page again, which is quick: the embeddings are cached, so only the
+    reducer's transform runs.
+    """
+    current = reference_id(reference_dir)
+    if current is None or storage.get_app_state(conn, COORDS_REFERENCE_KEY) == current:
+        return 0
+    dropped = storage.clear_umap_coords(conn)
+    storage.set_app_state(conn, COORDS_REFERENCE_KEY, current)
+    conn.commit()
+    if dropped:
+        log.info("Reference space changed: dropped %d map coordinates to re-place", dropped)
+    return dropped
+
+
 def project_pages(
     conn: sqlite3.Connection, reference_dir: str | Path | None = None
 ) -> dict:
     """Transform visited pages' cached embeddings into the frozen space.
 
     Pages without a cached embedding are reported, not projected - run
-    embeddings.embed_pages first (the /enrich flow does).
+    embeddings.embed_pages first (the /enrich flow does). Coordinates
+    placed in a different reference space are dropped first and placed
+    again (forget_stale_coords).
     """
+    forget_stale_coords(conn, reference_dir)
     todo = storage.pages_without_coords(conn)
     already = storage.count_pages(conn) - len(todo)
     report = {

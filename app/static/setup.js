@@ -182,13 +182,12 @@ window.WWsetup = (function () {
           "sent to Wikipedia's public APIs (run by the Wikimedia " +
           "Foundation) to look up each article's topic, summary, and " +
           "popularity. Nothing about you is sent with them."),
-        el("li", {}, "The first time, a language model (about 90 MB) is " +
-          "downloaded from Hugging Face to place articles on the map."),
         el("li", {}, "Only if you turn on the Advanced Google Drive option: " +
           "the app lists and downloads your Takeout archives from your own " +
           "Google Drive.")),
-      el("p", {}, "Nothing else leaves your computer. Next, choose where " +
-        "your history comes from."));
+      el("p", {}, "Nothing else leaves your computer. The language model " +
+        "that places articles on the map comes with the app and runs " +
+        "locally. Next, choose where your history comes from."));
   }
 
   /* The words for where an account's visits came from. */

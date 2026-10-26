@@ -169,7 +169,8 @@ def authorize_account(
             f"JSON from Google Cloud Console into {config.USER_DATA_DIR} "
             f"(the filename must match {config.CLIENT_SECRET_GLOB}), "
             "or set takeout.client_secret in config.local.toml. "
-            "The README has the console steps."
+            "The app's Help (Advanced: signing in to Google Drive) has the "
+            "console steps."
         )
 
     flow = google["InstalledAppFlow"].from_client_secrets_file(

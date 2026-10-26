@@ -1,0 +1,269 @@
+# Build the installers: macOS Apple Silicon, macOS Intel and Windows x64.
+#
+# Each platform builds its installer (packaging/build_installer.py), then
+# installs it on the runner the way a user would, silently, and runs the
+# installed app's --self-test before uninstalling it again. On a version
+# tag a final job collects the three installers into a DRAFT GitHub
+# release with a SHA256SUMS file; publishing it stays a manual step.
+#
+# Triggers:
+#   - a tag v<version> (a release) or v<version>-<suffix> (a test build,
+#     drafted as a pre-release); the version must be config.APP_VERSION.
+#   - "Run workflow" (workflow_dispatch): builds and tests without a
+#     release. GitHub only offers this for workflows on the default branch.
+#
+# Cost while the repository is private: macOS minutes count ten times and
+# Windows minutes twice against the free 2,000 a month, so one run uses a
+# large share of them (packaging/README.md, "Releases", has measurements).
+# Installers go to the release, not to Actions storage, which keeps them
+# out of the 500 MB artifact quota: between jobs they are kept for 1 day.
+
+name: Build installers
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python3 packaging/release_version.py ${TAG:+--tag "$TAG"} --github-output
+
+  build:
+    name: ${{ matrix.label }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS Apple Silicon
+            runner: macos-15
+            platform: osx-arm64
+            installer: pkg
+          - label: macOS Intel
+            # GitHub's last Intel macOS image; supported until fall 2027.
+            runner: macos-15-intel
+            platform: osx-64
+            installer: pkg
+          - label: Windows x64
+            runner: windows-2025
+            platform: win-64
+            installer: exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        # Git Bash on Windows. conda is called by its full name on PATH (set
+        # below), never through shell activation.
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # One package cache for every conda step, including the installer
+      # build (build_installer.py uses the same folder), cached below.
+      CONDA_PKGS_DIRS: ${{ github.workspace }}/packaging/build/pkgs
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      # Only the downloaded package files are cached, not their unpacked
+      # copies: those are several GB, and conda unpacks again quickly.
+      - name: Restore the conda package cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            packaging/build/pkgs/*.conda
+            packaging/build/pkgs/*.tar.bz2
+          key: conda-pkgs-${{ matrix.platform }}-${{ hashFiles(format('packaging/locks/{0}.txt', matrix.platform), 'packaging/build-tools.yml') }}
+          restore-keys: conda-pkgs-${{ matrix.platform }}-
+
+      - name: Restore the model
+        uses: actions/cache@v6
+        with:
+          path: packaging/build/resources/models
+          key: model-${{ hashFiles('packaging/model.json') }}
+
+      # Only conda itself is needed: every step names its environment
+      # (conda run -n ...), so no shell is activated. Skipping `conda init`
+      # (run-init) also avoids its failure on the Windows runners
+      # ("needs sudo" for Scripts\conda.exe, 2026-10-26).
+      # Miniforge is pinned like every other tool here. 26.9.4-0 (the latest
+      # on 2026-10-26) could not create environments on Windows: its conda
+      # found no Windows command launcher in its conda-launchers package.
+      - uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: 26.7.2-0
+          activate-environment: ""
+          auto-activate: false
+          run-init: false
+          conda-remove-defaults: true
+
+      - name: Put conda on PATH
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "${CONDA}\\Scripts" >> "$GITHUB_PATH"
+          else
+            echo "${CONDA}/bin" >> "$GITHUB_PATH"
+          fi
+
+      # The app's runtime exactly as the installer ships it (the lock and
+      # the hash-locked wheels), plus pytest, to test what is shipped.
+      - name: Create the runtime and build-tools environments
+        run: |
+          conda create -y -q -n ww-runtime --file "packaging/locks/${{ matrix.platform }}.txt"
+          conda run -n ww-runtime python -m pip install -q --no-deps --require-hashes \
+              -r "packaging/wheels/requirements-${{ matrix.platform }}.txt"
+          conda run -n ww-runtime python -m pip install -q "pytest==8.*"
+          conda env create -q -f packaging/build-tools.yml
+
+      - name: Fetch the bundled model and reference space
+        env:
+          # The repository is private, so the reference space's release
+          # asset needs this run's token to download.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f packaging/build/resources/models/all-MiniLM-L6-v2/manifest.json ]; then
+            conda run --no-capture-output -n ww-runtime \
+                python scripts/fetch_model.py --dest packaging/build/resources
+          fi
+          conda run --no-capture-output -n ww-runtime \
+              python scripts/fetch_reference_space.py --platform "${{ matrix.platform }}"
+
+      # Offline tests only: the "integration" ones call live Wikipedia APIs.
+      - name: Run the tests
+        env:
+          WIKIPEDIA_WRAPPED_RESOURCE_DIR: ${{ github.workspace }}/packaging/build/resources
+        run: conda run --no-capture-output -n ww-runtime python -m pytest -q -m "not integration"
+
+      - name: Build the installer
+        run: |
+          conda run --no-capture-output -n wikipedia-wrapped-build python packaging/build_installer.py
+          # Room for the install below: runners have about 14 GB free.
+          rm -rf packaging/build/constructor-cache
+          df -h .
+
+      - name: Install, self-test and uninstall (macOS)
+        if: runner.os == 'macOS'
+        env:
+          WIKIPEDIA_WRAPPED_DATA_DIR: ${{ runner.temp }}/userdata
+          # As on a user's computer: Python's default text encoding.
+          PYTHONUTF8: "0"
+        run: |
+          set -x
+          installer -pkg packaging/build/dist/*.pkg -target CurrentUserHomeDirectory
+          root="$HOME/Library/WikipediaWrapped-App"
+          prefix="$root/v$VERSION"
+          app="$HOME/Applications/Wikipedia Wrapped.app"
+          test -d "$app"
+          "$prefix/bin/python" "$prefix/share/wikipedia-wrapped/launch.py" --self-test
+          # Again through the shortcut's own Python, as the Dock launches it.
+          "$app/Contents/MacOS/python" "$prefix/share/wikipedia-wrapped/launch.py" --self-test
+          bash "$root/uninstall.sh"
+          test ! -e "$root" && test ! -e "$app"
+
+      # Two installs: the first, into another folder, stands in for an older
+      # version, which the second (an upgrade) must remove through its
+      # uninstaller (installer/windows/pre_install.bat).
+      - name: Install, upgrade, self-test and uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIKIPEDIA_WRAPPED_DATA_DIR: ${{ runner.temp }}\userdata
+          # As on a user's PC: Python's default (non-UTF-8) text encoding.
+          PYTHONUTF8: "0"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Get-ChildItem packaging/build/dist/*.exe).FullName
+          $root = Join-Path $env:LOCALAPPDATA 'WikipediaWrapped-App'
+          $older = Join-Path $root 'v0.0.0-ci'
+          $prefix = Join-Path $root "v$env:VERSION"
+
+          # -NoNewWindow: a silent install prints its messages to the
+          # console it was started from, so they reach this log. On failure,
+          # its install.log says which step stopped it.
+          function Install([string[]] $arguments, [string] $folder) {
+            $p = Start-Process $exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -ne 0) {
+              foreach ($log in "$folder\install.log", "$folder\.step.log") {
+                if (Test-Path $log) { "--- $log"; Get-Content $log -Tail 100 }
+              }
+              throw "installer exited $($p.ExitCode)"
+            }
+          }
+          Install @('/S', '/InstallationType=JustMe', "/D=$older") $older
+          if (-not (Test-Path "$older\python.exe")) { throw 'first install failed' }
+          Install @('/S', '/InstallationType=JustMe') $prefix
+          if (Test-Path "$older\python.exe") { throw 'the upgrade did not remove the older install' }
+          if (-not (Test-Path "$prefix\python.exe")) { throw "nothing installed in $prefix" }
+
+          $shortcuts = Get-ChildItem -Recurse ([Environment]::GetFolderPath('Programs')),
+              ([Environment]::GetFolderPath('Desktop')) -Filter 'Wikipedia Wrapped.lnk'
+          $shortcuts | ForEach-Object { $_.FullName }
+          if ($shortcuts.Count -lt 2) { throw 'expected a Start menu and a desktop shortcut' }
+
+          & "$prefix\python.exe" "$prefix\share\wikipedia-wrapped\launch.py" --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'self-test failed' }
+
+          $p = Start-Process "$prefix\Uninstall-WikipediaWrapped.exe" `
+              -ArgumentList '/S', "_?=$prefix" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstaller exited $($p.ExitCode)" }
+          if (Test-Path "$prefix\python.exe") { throw 'uninstall left the program behind' }
+
+      - name: Keep the installer for the release job
+        uses: actions/upload-artifact@v7
+        with:
+          path: packaging/build/dist/WikipediaWrapped-${{ env.VERSION }}-*.${{ matrix.installer }}
+          # Uploaded as the file itself (named after it), not zipped again.
+          archive: false
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    name: Draft the release
+    if: github.ref_type == 'tag'
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: WikipediaWrapped-*
+          merge-multiple: true
+          path: dist
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          cd dist
+          installers=(WikipediaWrapped-*)
+          ls -l "${installers[@]}"
+          test "${#installers[@]}" -eq 3
+          sha256sum "${installers[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          flags=(--draft --verify-tag)
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${installers[@]}" SHA256SUMS "${flags[@]}" \
+              --title "Wikipedia Wrapped ${TAG#v}" \
+              --notes-file ../packaging/release-notes.md

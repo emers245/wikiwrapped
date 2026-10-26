@@ -1,0 +1,40 @@
+# The app's own code as a small conda package, built with rattler-build by
+# packaging/build_installer.py (see packaging/README.md).
+#
+# Why a package rather than plain files copied in by the installer:
+# menuinst, which makes the Start Menu / Applications shortcuts, only acts
+# on conda packages that carry a Menu/<name>.json; and a package records
+# its version and its files in the installation's conda-meta, the same way
+# as every library beside it.
+#
+# noarch: generic, because it is only Python source, icons and a JSON
+# file: one build serves macOS and Windows alike.
+
+context:
+  # Set by build_installer.py from config.APP_VERSION, the one place the
+  # version lives; stage_app.py checks the two agree.
+  version: ${{ env.get("WIKIPEDIA_WRAPPED_VERSION") }}
+
+package:
+  name: wikipedia-wrapped
+  version: ${{ version }}
+
+build:
+  number: 0
+  noarch: generic
+  # stage_app.py reads the repo itself, so there is no `source:` to copy.
+  script: python "${{ RECIPE_DIR }}/../stage_app.py"
+  python:
+    # rattler-build would byte-compile the app with the Python above
+    # (3.12), which the app's own 3.11 ignores. The installer compiles it
+    # with the installed Python instead (installer/*/post_install).
+    skip_pyc_compilation:
+      - "**/*.py"
+
+requirements:
+  build:
+    - python 3.12.*
+
+about:
+  homepage: https://github.com/emers245/wikipedia-wrapped
+  summary: Your Wikipedia reading history, mapped and summarized.

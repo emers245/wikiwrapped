@@ -1,56 +1,55 @@
-# Pinned conda environment for Wikipedia Wrapped (repo_spec S9, D8).
+# Developer environment for Wikipedia Wrapped (repo_spec S9, D8).
 # Build:  conda env create -f environment.yml
 # Verify: conda run -n wikipedia-wrapped python scripts/check_env.py --full
+#
+# This is the installed app's runtime spec (packaging/runtime.yml) plus
+# developer tools. The first block below must stay identical to that file:
+# tests/test_environment_specs.py fails if any runtime entry is missing
+# here or differs, so the app is never developed against packages the
+# installer would not ship. Change runtime entries in packaging/runtime.yml
+# first, re-lock (packaging/README.md), then copy the change here.
 name: wikipedia-wrapped
 channels:
   - conda-forge
   - nodefaults
 dependencies:
-  # -- Fragile cluster: numba/llvmlite are strict about NumPy + Python versions.
-  #    These four pins are a known-good combination and must move together.
+  # ======================================================================
+  # Runtime: identical to packaging/runtime.yml (see the comments there)
+  # ======================================================================
   - python=3.11.*
   - numpy=1.26.4
   - numba=0.60.0
   - llvmlite=0.43.0
   - umap-learn=0.5.7
   - scikit-learn=1.5.*
-  # -- Embeddings. Upstream torch dropped Intel-macOS wheels after 2.2.x, but
-  #    conda-forge builds CPU pytorch for osx-64; 2.10.0 verified to solve
-  #    against the numpy 1.26.4 pin on this machine (2026-07-19).
-  - pytorch=2.10.0
+  - pynndescent=0.5.13
+  - pytorch=2.10.0=cpu_*
   - sentence-transformers=3.2.1
-  # -- Data + HTTP
-  - pandas=2.2.*
   - requests=2.32.*
   - tqdm=4.*
-  - pyarrow=17.*
   - tzlocal=5.*
-  # -- Per-user data directory (~/Library/Application Support, %APPDATA%,
-  #    XDG): the one place the app writes; see config.user_data_dir.
   - platformdirs=4.*
-  # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
-  - matplotlib-base=3.9.*
-  # -- Session-network metrics (in/out-degree, PageRank)
   - networkx=3.*
-  # -- Google Drive / Takeout ingestion (read-only). Optional at runtime:
-  #    app/drive.py imports these lazily, so the local-Chrome path still
-  #    works in an environment that lacks them.
   - google-api-python-client=2.*
   - google-auth-oauthlib=1.*
   - google-auth=2.*
-  # -- API layer
   - fastapi=0.115.*
   - uvicorn=0.32.*
-  - python-multipart=0.0.*
+  - pip
+  - proxy-tools=0.1.0
+  # ======================================================================
+  # Developer tools only (never shipped in the installers)
+  # ======================================================================
   # -- Testing (httpx backs FastAPI's TestClient)
   - pytest=8.*
   - httpx=0.27.*
-  # -- App window (app/launcher.py imports it lazily; nothing else needs it).
-  #    From PyPI, not conda-forge: conda-forge's pywebview 6.2.1 has only
-  #    Windows and Linux builds, and its macOS dependencies
-  #    pyobjc-framework-webkit/-security are missing for osx-arm64 (checked
-  #    2026-10-24). pip brings the pyobjc wheels on macOS and pythonnet on
-  #    Windows. The packaging step has to account for this pip install.
-  - pip
+  # -- Ad-hoc inspection plots only (the app itself returns data, not plots)
+  - matplotlib-base=3.9.*
+  # -- FastAPI's form-upload support. The app has no form uploads, so it is
+  #    not listed in the runtime spec (it still arrives there transitively).
+  - python-multipart=0.0.*
+  # -- App window, from PyPI on every platform (conda-forge has no macOS
+  #    build). Must match packaging/wheels/requirements.in; the installers
+  #    ship the same version as pinned, hashed wheels.
   - pip:
       - pywebview==6.2.1

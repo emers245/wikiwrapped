@@ -44,3 +44,16 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Packaging outputs (Milestones 2-3): fetched/packaged reference spaces,
+# staged resources, built conda packages and installers. Large binaries,
+# rebuilt from the scripts in packaging/ and scripts/; never committed.
+packaging/build/
+*.tar.gz
+*.pkg
+*.exe
+
+# The bundled resources folder an installer puts next to the code
+# (config.INSTALLED_RESOURCES_NAME). Its presence switches the app into
+# installed mode, so it must never appear in a checkout by accident.
+/resources/

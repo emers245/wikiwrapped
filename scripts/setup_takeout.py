@@ -24,7 +24,7 @@ permissions. That directory and config.local.toml both live in the
 per-user data directory (config.USER_DATA_DIR), not in the repo.
 
 The Google Cloud Console steps for the Advanced Drive route are in the
-README under "Google Takeout integration".
+DEVELOPMENT.md under "Google Takeout integration".
 """
 
 from __future__ import annotations
@@ -235,7 +235,7 @@ def choose_drive(settings: dict) -> dict:
     if localconfig.client_secret_path(settings) is None:
         print(
             "\nNo OAuth client secret found. Download the Desktop app client\n"
-            "JSON from Google Cloud Console (the README lists the steps)."
+            "JSON from Google Cloud Console (DEVELOPMENT.md lists the steps)."
         )
         path = input("Path to the client secret JSON (blank to skip): ").strip()
         if path:

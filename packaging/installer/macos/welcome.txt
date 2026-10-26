@@ -1,0 +1,10 @@
+Wikipedia Wrapped turns your Wikipedia reading history into a dashboard and a map, on your own computer.
+
+This installs it for you only, without asking for an administrator password:
+
+  - the program, in the WikipediaWrapped-App folder of your Library folder (about 2 GB)
+  - a "Wikipedia Wrapped" app in the Applications folder of your home folder
+
+Your history and settings are kept separately, in Library/Application Support/WikipediaWrapped, and installing, upgrading or uninstalling never changes them.
+
+Upgrading: quit Wikipedia Wrapped, then run the newer installer. It replaces the old version.

@@ -12,7 +12,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 APP_NAME = "WikipediaWrapped"
-APP_VERSION = "0.1"
+# The one place the version is set: the installers and the app's conda
+# package take it from here (packaging/build_installer.py), and a release's
+# git tag must be v<this>.
+APP_VERSION = "0.1.0"
 PROJECT_URL = "https://github.com/emers245/wikipedia-wrapped"
 
 # ---------------------------------------------------------------------------
@@ -57,15 +60,34 @@ def user_data_dir() -> Path:
     return Path(platformdirs.user_data_dir(APP_NAME, appauthor=False, roaming=True))
 
 
+# The folder, next to the code, where an installer puts the bundled
+# resources (the model and the reference space). Git-ignored in a checkout.
+INSTALLED_RESOURCES_NAME = "resources"
+
+
 def installed_resource_dir() -> Path | None:
     """Where an installed copy of the app keeps its read-only resources.
 
-    HOOK FOR THE PACKAGING PROMPT. The installer decides where the reference
-    space (and later the model) is unpacked, typically somewhere under the
-    installed environment's prefix. Until that exists this returns None and
-    resolution falls through to the repo checkout.
+    The installers put the app's code in one folder and the bundled
+    resources in a "resources" folder beside it (packaging/README.md), so
+    the resources are found relative to this file and nothing about the
+    install location needs configuring. A dev checkout has no such folder
+    (it is git-ignored), so this returns None there and resolution falls
+    through to the repo's data/.
     """
-    return None
+    candidate = PROJECT_ROOT / INSTALLED_RESOURCES_NAME
+    return candidate if candidate.is_dir() else None
+
+
+def is_installed() -> bool:
+    """True when running from an installer's layout (bundled resources).
+
+    Installed mode is stricter than a dev checkout: the model must load from
+    the bundled copy and nothing may be fetched from the internet to fill a
+    gap (app/embeddings.py), because a missing file means a broken install,
+    which should fail loudly rather than quietly download.
+    """
+    return installed_resource_dir() is not None
 
 
 def resource_dir() -> Path:
@@ -103,8 +125,12 @@ SYNC_STATE_PATH = DATA_DIR / "sync_state.json"
 LOG_DIR = USER_DATA_DIR / "logs"
 CACHE_DIR = USER_DATA_DIR / "cache"
 
-# Frozen UMAP reducer + reference embeddings (D4): a read-only resource.
+# Frozen UMAP reducer + reference points (D4): a read-only resource.
 REFERENCE_DIR = resource_dir() / "reference"
+
+# The bundled sentence-transformers model (see EMBEDDING_MODEL below): a
+# read-only resource, fetched by scripts/fetch_model.py.
+MODELS_DIR = resource_dir() / "models"
 
 # Where scripts/build_reference_space.py writes a fresh reference space. A
 # developer tool, so it is the one thing allowed to write into the repo; the
@@ -200,6 +226,16 @@ BACKOFF_BASE_S = 2.0      # exponential backoff on 429/5xx: 2s, 4s, 8s, ...
 # Embeddings / UMAP
 # ---------------------------------------------------------------------------
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+# The exact Hugging Face commit of that model, pinned so every install embeds
+# with byte-identical weights: the reference space was built from vectors of
+# this revision, and a different one would put new pages in slightly wrong
+# places. 1110a243 is the revision the current reference space was built
+# with (2026-07-19) and is still the repo's main as of 2026-10-25.
+EMBEDDING_MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+
+# Where the bundled copy of the model lives under MODELS_DIR.
+EMBEDDING_MODEL_DIR = MODELS_DIR / EMBEDDING_MODEL.rsplit("/", 1)[-1]
 
 # Reference-space sample sizes (D4): top-viewed head + random tail.
 # Decision 2026-07-19: ~40k total matches the old sampler's proven scale.

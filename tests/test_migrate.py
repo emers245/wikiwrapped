@@ -4,7 +4,9 @@ Every rule from the module docstring has a test here, because the file it
 exists to protect (the visit log) cannot be recreated if it is lost."""
 
 import json
+import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -56,7 +58,8 @@ def repo(tmp_path):
 
 
 def by_path(report):
-    return {str(item.relpath): item for item in report["items"]}
+    """Items by relative path, written with / on every platform."""
+    return {item.relpath.as_posix(): item for item in report["items"]}
 
 
 def test_copies_every_kind_of_user_data_and_verifies(repo, tmp_path):
@@ -92,6 +95,9 @@ def test_sources_are_never_modified_or_removed(repo, tmp_path):
     assert snapshot(repo) == before
 
 
+# Windows has no owner-only permission bits (chmod there only sets read-only);
+# the user's own profile folder is what keeps the token private.
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX permission bits on Windows")
 def test_token_permissions_survive_the_copy(repo, tmp_path):
     dest = tmp_path / "userdata"
     migrate.migrate(repo, dest)
@@ -224,7 +230,8 @@ def test_cli_dry_run_reports_and_exits_zero(repo, tmp_path, capsys):
                          "--dest", str(tmp_path / "userdata")])
     out = capsys.readouterr().out
     assert code == 0
-    assert "DRY RUN" in out and "data/visits.jsonl" in out
+    # The report uses the platform's own separator (data\\visits.jsonl on Windows).
+    assert "DRY RUN" in out and str(Path("data", "visits.jsonl")) in out
     assert not (tmp_path / "userdata").exists()
 
 
