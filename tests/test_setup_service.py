@@ -6,6 +6,7 @@ change) and the localhost guard. Google is never contacted:
 drive.authorize_account is replaced by a fake."""
 
 import json
+import os
 import zipfile
 
 import pytest
@@ -211,7 +212,8 @@ def test_client_secret_is_validated_and_copied_privately(userdata, tmp_path):
 
     copy = userdata / setup_service.CLIENT_SECRET_NAME
     assert json.loads(copy.read_text()) == json.loads(source.read_text())
-    assert copy.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":   # Windows has no owner-only permission bits
+        assert copy.stat().st_mode & 0o777 == 0o600
     assert localconfig.client_secret_path(settings) == copy
     assert source.exists()          # the download is left where it was
 
