@@ -6,8 +6,9 @@ next, and when you read them. It builds all of this from your own browsing
 history (Google Chrome, and optionally Google Takeout archives), on your
 own computer. Your history stays there: the only thing sent anywhere is
 the titles of the Wikipedia articles you visited, to Wikipedia itself, to
-look up their topics (the app's Help, "what leaves your computer", has the
-details).
+look up their topics, plus, only if you choose the advanced Google Drive
+option, a read-only sign-in to your own Drive (the app's Help, "what
+leaves your computer", has the details).
 
 ## Download and install
 
