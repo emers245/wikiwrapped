@@ -463,15 +463,17 @@ macOS quarantines it like a user's download:
 ### The icon
 
 `packaging/icon/icon.png` is the app's logo
-(`app/static/logo/WikiWrapped_Logo.png`) centered on a white rounded
-square, the shape of a macOS app icon; the white plate keeps a line
-drawing visible on the dark Dock. After changing the logo, redo it with
+(`app/static/logo/WikiWrapped_Logo_v2.png`, a white drawing on blue),
+trimmed to the drawing and centered on a rounded square of the same blue,
+the shape of a macOS app icon. After changing the logo, redo it with
 
 ```bash
 conda run -n wikipedia-wrapped-build python packaging/icon/make_icons.py \
-    --compose app/static/logo/WikiWrapped_Logo.png
+    --compose app/static/logo/WikiWrapped_Logo_v2.png --plate "#286bb1"
 ```
 
+(`--plate` is the square's color, and that color counts as background in
+the logo; without it the plate is white, for a drawing on transparency),
 or replace `icon.png` with a finished square design (1024 x 1024, with a
 transparent margin). The `.icns` and `.ico` are generated from it on
 every build and never committed.

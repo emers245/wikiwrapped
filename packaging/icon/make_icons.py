@@ -14,9 +14,13 @@ from it.
 empty margins and centers it on a white rounded square, the shape of a
 macOS app icon. The plate matters for a line drawing on a transparent
 background, which would all but vanish on the dark Dock of dark mode.
-The current icon.png was made this way from the app's logo
-(app/static/logo/WikiWrapped_Logo.png); run --compose again after
-changing the logo. Or replace icon.png with a finished design directly.
+--plate sets the square's color; pixels of (nearly) that color in the
+logo count as background too, so a drawing on a solid card of that color
+keeps only the drawing. The current icon.png was made from the app's logo
+with
+    --compose app/static/logo/WikiWrapped_Logo_v2.png --plate "#286bb1"
+(the white drawing on its own blue). Run it again after changing the
+logo, or replace icon.png with a finished design directly.
 
 --placeholder redraws the original placeholder (a gift box drawn from
 shapes), in case it is ever wanted again.
@@ -28,7 +32,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageColor, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "icon.png"
@@ -65,23 +69,33 @@ def draw_placeholder() -> Image.Image:
     return img
 
 
-def compose(logo_path: Path) -> Image.Image:
-    """A logo, trimmed and centered on a white rounded square."""
+def compose(logo_path: Path, plate: str = "#ffffff") -> Image.Image:
+    """A logo, trimmed and centered on a rounded square of color `plate`.
+
+    What counts as the logo's empty margin, to trim: transparency, and any
+    pixel close to the plate's color. So a logo drawn on a solid background
+    of that color (a white drawing on a blue card, say) loses its card and
+    keeps only the drawing, which then sits on a plate of the same color.
+    """
     logo = Image.open(logo_path).convert("RGBA")
-    alpha = logo.getchannel("A")
-    if alpha.getextrema()[0] == 255:
-        # No transparency: treat (near) white as the background to trim.
-        ink = logo.convert("L").point(lambda v: 255 if v < 245 else 0)
-        logo = logo.crop(ink.getbbox())
-    else:
-        logo = logo.crop(alpha.getbbox())
+    background = ImageColor.getrgb(plate)
+
+    # Ink: visible (alpha above 16) and unlike the plate (some channel
+    # more than 24 away from it).
+    diff = ImageChops.difference(logo.convert("RGB"), Image.new("RGB", logo.size, background))
+    r, g, b = diff.split()
+    unlike = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v > 24 else 0)
+    visible = logo.getchannel("A").point(lambda v: 255 if v > 16 else 0)
+    logo = logo.crop(ImageChops.multiply(unlike, visible).getbbox())
     scale = LOGO_BOX / max(logo.size)
     logo = logo.resize((round(logo.width * scale), round(logo.height * scale)),
                        Image.LANCZOS)
 
     img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     ImageDraw.Draw(img).rounded_rectangle(
-        PLATE, radius=PLATE_RADIUS, fill="#ffffff", outline="#d9d9d9", width=6)
+        PLATE, radius=PLATE_RADIUS, fill=plate,
+        outline="#d9d9d9" if background == (255, 255, 255) else None,
+        width=6)
     corner = ((SIZE - logo.width) // 2, (SIZE - logo.height) // 2)
     img.alpha_composite(logo, corner)
     return img
@@ -113,12 +127,15 @@ def main(argv=None) -> int:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--compose", type=Path, metavar="LOGO",
                         help=f"make {SOURCE.name} from LOGO on a white rounded square, and stop")
+    parser.add_argument("--plate", default="#ffffff",
+                        help="--compose: the rounded square's color, also trimmed "
+                             "from the logo as background (default white)")
     parser.add_argument("--placeholder", action="store_true",
                         help=f"redraw the placeholder into {SOURCE.name} and stop")
     args = parser.parse_args(argv)
 
     if args.compose:
-        compose(args.compose).save(args.source, optimize=True)
+        compose(args.compose, args.plate).save(args.source, optimize=True)
         print(f"Made {args.source} from {args.compose}")
         return 0
     if args.placeholder:
