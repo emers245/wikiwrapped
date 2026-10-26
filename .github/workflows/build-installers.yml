@@ -104,9 +104,12 @@ jobs:
       # (conda run -n ...), so no shell is activated. Skipping `conda init`
       # (run-init) also avoids its failure on the Windows runners
       # ("needs sudo" for Scripts\conda.exe, 2026-10-26).
+      # Miniforge is pinned like every other tool here. 26.9.4-0 (the latest
+      # on 2026-10-26) could not create environments on Windows: its conda
+      # found no Windows command launcher in its conda-launchers package.
       - uses: conda-incubator/setup-miniconda@v4
         with:
-          miniforge-version: latest
+          miniforge-version: 26.7.2-0
           activate-environment: ""
           auto-activate: false
           run-init: false
@@ -160,6 +163,8 @@ jobs:
         if: runner.os == 'macOS'
         env:
           WIKIPEDIA_WRAPPED_DATA_DIR: ${{ runner.temp }}/userdata
+          # As on a user's computer: Python's default text encoding.
+          PYTHONUTF8: "0"
         run: |
           set -x
           installer -pkg packaging/build/dist/*.pkg -target CurrentUserHomeDirectory
@@ -181,6 +186,8 @@ jobs:
         shell: pwsh
         env:
           WIKIPEDIA_WRAPPED_DATA_DIR: ${{ runner.temp }}\userdata
+          # As on a user's PC: Python's default (non-UTF-8) text encoding.
+          PYTHONUTF8: "0"
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = (Get-ChildItem packaging/build/dist/*.exe).FullName
