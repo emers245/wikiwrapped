@@ -43,8 +43,6 @@ computer asks you to confirm once before running each one.
    the installer, click **Open Anyway**, enter your login password, and
    confirm with **Open**. The button is there for about an hour after you
    tried to open the file.
-   TODO(Joe): verify on macOS 15 or later (an Apple silicon Mac): the
-   wording of the first message and of the confirmation.
    On macOS 14 or earlier you can instead Control-click the `.pkg` in
    Finder, choose **Open**, then **Open** again. (On macOS 11 and 12 the
    setting above is in **System Preferences > Security & Privacy >
@@ -62,7 +60,7 @@ computer asks you to confirm once before running each one.
 
 1. Your browser may say the file is not commonly downloaded. In Microsoft
    Edge, open the download's **...** menu, choose **Keep**, then **Show
-   more > Keep anyway**. TODO(Joe): verify the Edge wording.
+   more > Keep anyway**.
 2. Double-click the `.exe`. Windows shows **Windows protected your PC**:
    click **More info**, then **Run anyway**.
 3. Follow the installer and keep its suggestions: **Just Me** (no
@@ -188,7 +186,7 @@ reports `legacy_data`, so a fresh log cannot quietly start in the new
 location while the old one sits in the repo. Once you have checked the app
 against the new location, deleting the repo copies is up to you.
 
-## Usage (Phase 1 pipeline)
+## Usage
 
 ```bash
 # 1. Capture your Wikipedia visits into the append-only log and the database
@@ -375,8 +373,7 @@ The step-by-step instructions for both are user help, so they live in one
 place: [`app/static/help.html`](app/static/help.html) (the app's Help
 button), sections **Setting up Google Takeout** and **Advanced: signing in
 to Google Drive**. Google's own wording there was checked on 2026-10-24;
-anything that could not be confirmed is marked `TODO(Joe): verify` on the
-page.
+anything that could not be confirmed is marked.
 
 Developer notes that do not belong in the user help:
 
@@ -688,7 +685,7 @@ Endpoints: `/health`, `/jobs`, `POST /jobs/sync`, `POST /ingest`,
 `/network`, `/pages/{title}`, `/dashboard`. Interactive docs at `/docs`.
 Run tests with `pytest` (`-m "not integration"` to stay offline).
 
-## Dashboard (Phase 2)
+## Dashboard
 
 How to read each view is in the user help (`app/static/help.html`,
 "Reading the dashboard"); this section is about how it is built.
