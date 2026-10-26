@@ -3,7 +3,22 @@
 How the installers are put together: the runtime environment and locks
 (Milestone 1), the bundled resources (Milestone 2), the installer build
 itself (Milestone 3), and the GitHub Actions builds and draft releases
-(Milestone 4).
+(Milestone 4). User-facing install instructions are in the main README
+("Download and install") and the in-app Help.
+
+**The four things you will do most:**
+
+| Task | Section |
+|---|---|
+| Cut a release | [Cutting a release](#cutting-a-release) |
+| Rebuild and re-upload the reference space | [Rebuilding the reference space](#rebuilding-the-reference-space) |
+| Bump a pinned dependency | [Bumping a pinned dependency](#bumping-a-pinned-dependency) |
+| Build an installer on your own Mac | [Building one](#building-one) |
+
+All commands run from the repo root. The build tools (constructor,
+rattler-build, conda-lock, `gh`, ...) live in their own environment,
+`wikipedia-wrapped-build`; the scripts that fetch or build resources run
+in the dev environment, `wikipedia-wrapped`.
 
 ## The pieces
 
@@ -40,11 +55,42 @@ same package.
 conda env create -f packaging/build-tools.yml
 ```
 
-## Re-locking after changing a dependency
+## Bumping a pinned dependency
 
-1. Edit `packaging/runtime.yml`.
-2. Copy the same change into the runtime block of `environment.yml`.
-3. Re-lock conda, then the wheels:
+**First, which kind of package is it?** That decides how much follows.
+
+1. **The pickle cluster**: Python (major.minor), numpy, numba, llvmlite,
+   umap-learn, scikit-learn, pynndescent (`app/bundle.PICKLE_PACKAGES`).
+   The reference space's reducer is a pickle of objects from these
+   libraries, and a pickle loaded under other versions can fail, or load
+   and quietly place pages wrongly. So the space must be **rebuilt in the
+   new environment** and shipped as a new `reference-vN`. Nothing lets
+   this slip through: packaging, fetching and the installed app's
+   self-test all refuse a space whose recorded versions differ from the
+   lock, and `tests/test_bundle_consistency.py` fails as soon as the
+   committed anchor stops matching a lock.
+2. **The embedding stack**: pytorch, sentence-transformers, transformers,
+   and the model revision (`config.EMBEDDING_MODEL_REVISION`). These
+   change the numbers the map was built from rather than the pickle. The
+   fixture check (`app/bundle_fixture.json`, cosine similarity above
+   0.999, in the tests and the self-test) shows whether the vectors moved.
+   If it fails, rebuild the reference space, then regenerate the fixture
+   in the same environment (`python scripts/make_embedding_fixture.py`).
+   A new model revision always means both. **Known gap:** the app caches
+   each page's embedding by model *name*, not revision, so after a
+   revision change existing users would keep vectors from the old one;
+   before shipping a new revision, make the app drop its embedding cache
+   when the revision changes (as it already does for map coordinates when
+   the reference space changes).
+3. **Anything else** (fastapi, requests, ...): re-lock and test; nothing
+   else follows.
+
+**Then:**
+
+1. Edit `packaging/runtime.yml`, and copy the same change into the runtime
+   block of `environment.yml` (`tests/test_environment_specs.py` fails if
+   they differ).
+2. Re-lock conda, then the wheels:
 
    ```bash
    conda run -n wikipedia-wrapped-build conda-lock lock \
@@ -53,13 +99,15 @@ conda env create -f packaging/build-tools.yml
    conda run -n wikipedia-wrapped-build python packaging/lock_wheels.py
    ```
 
-4. `pytest tests/test_environment_specs.py`.
-
-**The fragile cluster** (python, numpy, numba, llvmlite, umap-learn,
-scikit-learn, pynndescent) is pinned because the reference space's pickled
-UMAP reducer depends on it. Changing any of them means rebuilding and
-re-uploading the reference space; pytorch and sentence-transformers
-likewise affect the embedding numbers the space was built from.
+3. Recreate the dev environment, so it has the new versions:
+   `conda env remove -n wikipedia-wrapped && conda env create -f environment.yml`.
+4. `pytest`. With a pickle-cluster change, expect the anchor test to fail
+   until step 5 is done.
+5. If the change was of kind 1 or 2, [rebuild the reference
+   space](#rebuilding-the-reference-space) in that environment and upload
+   it as the next `reference-vN`.
+6. Push a test tag (`v<version>-rc.1`) to build and self-test all three
+   installers before releasing.
 
 ## Why each runtime dependency is there (import audit, 2026-10-24)
 
@@ -161,44 +209,44 @@ matches its manifest, and its versions match the target platform's lock.
 The anchor, not anything downloaded, is what is trusted: the archive holds
 a pickle, and loading a pickle runs code.
 
-`gh` is not installed by default: `conda install -c conda-forge gh`, then
-`gh auth login`.
+`gh` comes with the build-tools environment. Log in once, in a terminal
+(it asks questions, which `conda run` cannot pass on):
+`conda activate wikipedia-wrapped-build && gh auth login`. The `gh`
+commands below then work in that environment.
 
-### The current anchor: the test build (`reference-v0`)
+### The current anchor: `reference-v1`
 
-`packaging/reference-space.json` currently describes the July 2026 test
-build (1,989 articles, 3.3 MB), packaged with `--versions-from-env`
-because it predates builds recording their versions. Upload it so the
-installer pipeline can be developed end to end:
+`packaging/reference-space.json` describes `reference-v1`, the full build
+of 2026-10-25: 39,794 articles, a 212 MB archive, uploaded as a
+pre-release named "Reference space v1". (The July test build was packaged
+as `reference-v0` while developing, but never uploaded.)
 
-```bash
-python scripts/package_reference_space.py --tag reference-v0 --versions-from-env
-gh release create reference-v0 --repo emers245/wikipedia-wrapped \
-    --title "Reference space v0" --prerelease \
-    --notes "Test build (1,989 articles); replace with reference-v1"
-gh release upload reference-v0 packaging/build/reference-space-v0.tar.gz \
-    --repo emers245/wikipedia-wrapped
-python scripts/fetch_reference_space.py      # round trip from the release
-```
+### Rebuilding the reference space
 
-### Building the full reference space (you, on your Mac)
-
-Hours of Wikipedia API calls; resumable (re-running reuses the build's
-caches). Run in the dev environment:
+Needed after a change of kind 1 or 2 under [Bumping a pinned
+dependency](#bumping-a-pinned-dependency), or to change the sample. Hours
+of Wikipedia API calls on your Mac; resumable (re-running reuses the
+build's caches). Use the next free tag number; `v2` below. In the dev
+environment:
 
 ```bash
 conda activate wikipedia-wrapped
-cp -R data/reference data/reference-test-build   # optional: keep the test build
+cp -R data/reference data/reference-previous     # optional: keep the old one
 python scripts/fetch_model.py                    # the pinned model, verified
 python scripts/build_reference_space.py          # 30,000 top + 10,000 random
-python scripts/package_reference_space.py --tag reference-v1
-gh release create reference-v1 --repo emers245/wikipedia-wrapped \
-    --title "Reference space v1" --prerelease --notes "Full build"
-gh release upload reference-v1 packaging/build/reference-space-v1.tar.gz \
+python scripts/package_reference_space.py --tag reference-v2
+gh release create reference-v2 --repo emers245/wikipedia-wrapped \
+    --title "Reference space v2" --prerelease --notes "What changed and why"
+gh release upload reference-v2 packaging/build/reference-space-v2.tar.gz \
     --repo emers245/wikipedia-wrapped
 python scripts/fetch_reference_space.py          # round trip from the release
-git add packaging/reference-space.json && git commit -m "Reference space v1"
+git add packaging/reference-space.json && git commit -m "Reference space v2"
 ```
+
+Keep the old releases: an installer already out there was built with the
+anchor of its day, and CI for an old commit fetches the old asset.
+Installed apps that update to a version with a new space place their
+pages on it again automatically (`umap_space.forget_stale_coords`).
 
 The build's caches go to `data/reference-build.db`, never your app
 database. Check afterwards:
@@ -214,7 +262,7 @@ database. Check afterwards:
    should print a small fraction (under ~5%).
 4. `pytest tests/test_bundle_consistency.py` passes (the reducer loads and
    projects the fixture).
-5. Launch the app from the checkout (`./run.sh`) and look at the map: the
+5. Launch the app from the checkout (`python -m app.launcher`) and look at the map: the
    grey backdrop should be a dense, structured cloud, and your pages should
    fall in sensible neighborhoods.
 6. `package_reference_space.py` accepted it (versions match every lock)
@@ -242,8 +290,7 @@ Installers are built on the platform they are for. On the Intel Mac:
 conda env update -n wikipedia-wrapped-build -f packaging/build-tools.yml  # once (adds pillow)
 conda activate wikipedia-wrapped
 python scripts/fetch_model.py --dest packaging/build/resources
-python scripts/fetch_reference_space.py   # until reference-v0 is uploaded:
-                                          #   --archive packaging/build/reference-space-v0.tar.gz
+python scripts/fetch_reference_space.py
 conda run -n wikipedia-wrapped-build python packaging/build_installer.py
 ```
 
@@ -489,7 +536,7 @@ on the default branch (`main`).
 ### Before the first run
 
 - The reference space asset the anchor names must exist as a release
-  (`reference-v0` now; see "The current anchor").
+  (`reference-v1` now; see "The current anchor").
 - Nothing else: the workflow uses only this run's built-in token.
 
 ### Caching and storage

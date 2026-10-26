@@ -12,7 +12,17 @@
 
      Google's wording was checked on 2026-10-24 against Google's own help
      pages (Takeout: support.google.com/accounts/answer/3024190; Drive for
-     desktop: support.google.com/drive/answer/16631477 and 12178485). -->
+     desktop: support.google.com/drive/answer/16631477 and 12178485).
+
+     The install, update and uninstall steps are also in the README
+     ("Download and install"), for reading before the app is installed;
+     tests/test_help.py checks the two name the same folders and commands.
+     Their macOS wording was checked on 2026-10-26 against Apple's guide
+     (support.apple.com/guide/mac-help/mh40616, current and macOS 13
+     versions; support.apple.com/en-us/116943 for Chip vs Processor); the
+     Windows wording against Microsoft Defender SmartScreen's dialog as
+     described by several university and vendor help pages. Anything not
+     confirmed is marked "TODO(Joe): verify" on the page itself. -->
 <style>
   :root {
     --bg: #faf9f6;
@@ -120,7 +130,8 @@ from, and what to do when something does not work.</p>
     <li><a href="#takeout">Setting up Google Takeout</a></li>
     <li><a href="#advanced">Advanced: signing in to Google Drive</a></li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
-    <li><a href="#storage">Where your data are stored; resetting and uninstalling</a></li>
+    <li><a href="#storage">Where your data are stored, and resetting</a></li>
+    <li><a href="#install">Installing, updating and uninstalling</a></li>
   </ul>
 </nav>
 
@@ -303,7 +314,7 @@ app.</p>
      alt="Google Takeout Chose File Type, Frequency, and Destination > File type > .zip"></div>
 <p>The first archive can take anywhere from a few minutes to a few days;
 Google emails you when it is ready. A scheduled export runs for one year;
-after that, set it up again.
+after that, set it up again.</p>
 
 <h3>Part 2, option A: let Google Drive for desktop bring the archives in (recommended)</h3>
 <ol>
@@ -480,6 +491,26 @@ already has. Common ones:</p>
 <p>To try again straight away, use <span class="ui">Settings &gt; Syncing
 &gt; Sync now</span>.</p>
 
+<h3 id="wont-open">The app does not open</h3>
+<p>The first launch after installing can take a little longer than later
+ones. If the window still does not appear:</p>
+<ol>
+  <li>Look near the end of the <a href="#logs">log</a> for an error.</li>
+  <li>Run the app's self-check. It tests the installation without opening
+    a window and prints <code>PASS</code> or <code>FAIL</code> for each
+    part; keep its output if you ask for help. In the commands, the
+    <code>v0.1.0</code> folder is named after your version (there is only
+    one).
+    <ul>
+      <li>Mac, in Terminal:<br>
+        <code>~/Library/WikipediaWrapped-App/v0.1.0/bin/python ~/Library/WikipediaWrapped-App/v0.1.0/share/wikipedia-wrapped/launch.py --self-test</code></li>
+      <li>Windows, in Command Prompt:<br>
+        <code>"%LOCALAPPDATA%\WikipediaWrapped-App\v0.1.0\python.exe" "%LOCALAPPDATA%\WikipediaWrapped-App\v0.1.0\share\wikipedia-wrapped\launch.py" --self-test</code></li>
+    </ul></li>
+  <li>Uninstalling and installing again repairs a damaged installation.
+    Your data are kept (see <a href="#uninstall">Uninstalling</a>).</li>
+</ol>
+
 <h3 id="logs">Viewing the logs</h3>
 <p>The app writes a log of everything it does, including every sync, to
 <code>logs/app.log</code> in its data folder (location below; the exact path
@@ -489,7 +520,7 @@ them in any text editor, or attach them when asking for help. They contain
 article titles you read, so look through them before sharing.</p>
 
 <!-- ===================================================================== -->
-<h2 id="storage">Where your data are stored; resetting and uninstalling</h2>
+<h2 id="storage">Where your data are stored, and resetting</h2>
 
 <p>Everything the app saves is in one folder:</p>
 <table>
@@ -533,16 +564,120 @@ article titles you read, so look through them before sharing.</p>
 visit the app has ever saved; anything older than Chrome's 90 days exists
 nowhere else, unless a Takeout archive has it.</div>
 
-<h3 id="uninstall">Uninstalling</h3>
+<!-- ===================================================================== -->
+<h2 id="install">Installing, updating and uninstalling</h2>
+
+<h3 id="installing">Installing</h3>
+<p>The installers are on the project's
+<a href="https://github.com/emers245/wikipedia-wrapped/releases" target="_blank" rel="noopener">Releases page</a>.
+Download the one for your computer:</p>
+<table>
+  <tr><th>Your computer</th><th>Download the file ending in</th></tr>
+  <tr><td>Mac with Apple silicon (M1 or later), macOS 11 or later</td>
+      <td><code>-macOS-AppleSilicon.pkg</code></td></tr>
+  <tr><td>Mac with an Intel processor, macOS 11 or later</td>
+      <td><code>-macOS-Intel.pkg</code></td></tr>
+  <tr><td>Windows 10 or 11, 64-bit</td>
+      <td><code>-Windows-x64.exe</code></td></tr>
+</table>
+<p>Not sure which Mac you have? Choose
+<span class="ui">Apple menu &gt; About This Mac</span>: a
+<span class="ui">Chip</span> line means Apple silicon; a
+<span class="ui">Processor</span> line naming Intel means Intel. Skip the
+<span class="ui">Source code</span> downloads on the same page: they are
+the program's code, not an installer.</p>
+<p>The installers are not yet signed by a registered developer, so your
+computer asks you to confirm once before running each one.</p>
+
+<p><strong>On a Mac</strong></p>
 <ol>
-  <li>Quit the app and remove it like any other application.
-  <li>Delete the data folder above if you no longer want your saved history
-    (back up <code>visits.jsonl</code> first if you might).</li>
-  <li>If you used the <a href="#advanced">Advanced option</a>, remove the
-    app's access to your Google account in your Google Account's
-    third-party connections
-    (<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>).</li>
+  <li>Double-click the downloaded <code>.pkg</code>. The first time, macOS
+    refuses to open it because it cannot check the developer. Close the
+    message.</li>
+  <li>Choose <span class="ui">Apple menu &gt; System Settings</span>, click
+    <span class="ui">Privacy &amp; Security</span> in the sidebar, and scroll
+    down to <span class="ui">Security</span>. Next to the note about the
+    installer, click <span class="ui">Open Anyway</span>, enter your login
+    password, and confirm with <span class="ui">Open</span>. The button is
+    there for about an hour after you tried to open the file.
+    <span class="todo">TODO(Joe): verify on macOS 15 or later (an Apple
+    silicon Mac): the wording of the first message and of the confirmation</span><br>
+    On macOS 14 or earlier you can instead Control-click the
+    <code>.pkg</code> in Finder, choose <span class="ui">Open</span>, then
+    <span class="ui">Open</span> again. (On macOS 11 and 12 the setting
+    above is in <span class="ui">System Preferences &gt; Security &amp;
+    Privacy &gt; General</span>.)</li>
+  <li>Follow the installer. It installs for you only, without asking for an
+    administrator password. Near the end it sits still for a few minutes
+    while it prepares the app; notifications show it is still working.</li>
+  <li>Open the app: press <span class="ui">Command-Space</span>, type
+    Wikipedia Wrapped, and press Return. It is also in the
+    <span class="ui">Applications</span> folder inside your home folder (in
+    Finder, <span class="ui">Go &gt; Home</span>); drag it to the Dock to
+    keep it there.</li>
 </ol>
+<div class="screenshot">Screenshot placeholder: Privacy &amp; Security, Security section, with Open Anyway</div>
+
+<p><strong>On Windows</strong></p>
+<ol>
+  <li>Your browser may say the file is not commonly downloaded. In
+    Microsoft Edge, open the download's <span class="ui">...</span> menu,
+    choose <span class="ui">Keep</span>, then
+    <span class="ui">Show more &gt; Keep anyway</span>.
+    <span class="todo">TODO(Joe): verify the Edge wording</span></li>
+  <li>Double-click the <code>.exe</code>. Windows shows
+    <span class="ui">Windows protected your PC</span>: click
+    <span class="ui">More info</span>, then
+    <span class="ui">Run anyway</span>.</li>
+  <li>Follow the installer and keep its suggestions:
+    <span class="ui">Just Me</span> (no administrator needed) and the
+    folder it proposes. Installing takes a few minutes.</li>
+  <li>Open the app from the Start menu or from the shortcut on your
+    desktop.</li>
+</ol>
+<div class="screenshot">Screenshot placeholder: Windows protected your PC, after clicking More info</div>
+<p>On some Windows 11 computers <span class="ui">Smart App Control</span>
+blocks unsigned apps outright, with no <span class="ui">Run anyway</span>.
+It can only be turned off for every app at once (in
+<span class="ui">Windows Security &gt; App &amp; browser control &gt;
+Smart App Control settings</span>), which you may prefer not to do; a
+signed installer, planned for a later version, avoids this.</p>
+
+<h3 id="updating">Updating to a new version</h3>
+<p>Quit the app, download the new installer, and run it the same way
+(the confirmation step comes again for each new download). It installs
+the new version and removes the old one. Your history and settings are
+kept; if the new version brings a new map, your pages are placed on it
+during the next sync.</p>
+<p>Reinstalling the version you already have is refused: uninstall it
+first, then install again.</p>
+
+<h3 id="uninstall">Uninstalling</h3>
+<p>Uninstalling removes the program and keeps your data, so installing
+again later picks up where you left off.</p>
+<ul>
+  <li><strong>Mac:</strong> quit the app, open Terminal (in
+    <span class="ui">Applications &gt; Utilities</span>), and run<br>
+    <code>bash ~/Library/WikipediaWrapped-App/uninstall.sh</code><br>
+    It removes the program (<code>~/Library/WikipediaWrapped-App</code>)
+    and the app in your Applications folder. Dragging the app to the Trash
+    is not enough: it leaves the program folder, about 2 GB, behind.</li>
+  <li><strong>Windows:</strong> open <span class="ui">Settings &gt; Apps
+    &gt; Installed apps</span> (on Windows 10, <span class="ui">Apps &amp;
+    features</span>), find <span class="ui">Wikipedia Wrapped</span>, and
+    choose <span class="ui">Uninstall</span>.</li>
+</ul>
+<p>To remove your data as well, delete the data folder
+(<a href="#storage">above</a>) afterwards, after copying
+<code>data/visits.jsonl</code> somewhere safe if you might want it. On a
+Mac, in Finder choose <span class="ui">Go &gt; Go to Folder</span> and
+paste the folder's path; on Windows, paste
+<code>%APPDATA%\WikipediaWrapped</code> into File Explorer's address
+bar.</p>
+<p>If you used the <a href="#advanced">Advanced option</a>, also remove the
+app's access to your Google account in your Google Account's third-party
+connections
+(<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>).</p>
 
 </div>
 <script>
