@@ -144,3 +144,7 @@ fixing problems, is in the app's **Help** (the same page is
 Running from source, the architecture, and the data pipeline are in
 [DEVELOPMENT.md](DEVELOPMENT.md); building installers and cutting releases
 in [packaging/README.md](packaging/README.md).
+
+# Why and how I built the app
+
+This is a passion project. I wanted to develop some code I had written to analyze my Wikipedia reading history that I had original written in 2024. I used this as an opportunity to teach myself how to use coding agents. I used Claude Opus 5.5 and Claude Fable extensively to develop interactive visualizations, create a graphical user interface, and build the application machinery.
