@@ -195,13 +195,21 @@ jobs:
           $older = Join-Path $root 'v0.0.0-ci'
           $prefix = Join-Path $root "v$env:VERSION"
 
-          function Install([string[]] $arguments) {
-            $p = Start-Process $exe -ArgumentList $arguments -Wait -PassThru
-            if ($p.ExitCode -ne 0) { throw "installer exited $($p.ExitCode)" }
+          # -NoNewWindow: a silent install prints its messages to the
+          # console it was started from, so they reach this log. On failure,
+          # its install.log says which step stopped it.
+          function Install([string[]] $arguments, [string] $folder) {
+            $p = Start-Process $exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -ne 0) {
+              foreach ($log in "$folder\install.log", "$folder\.step.log") {
+                if (Test-Path $log) { "--- $log"; Get-Content $log -Tail 100 }
+              }
+              throw "installer exited $($p.ExitCode)"
+            }
           }
-          Install @('/S', '/InstallationType=JustMe', "/D=$older")
+          Install @('/S', '/InstallationType=JustMe', "/D=$older") $older
           if (-not (Test-Path "$older\python.exe")) { throw 'first install failed' }
-          Install @('/S', '/InstallationType=JustMe')
+          Install @('/S', '/InstallationType=JustMe') $prefix
           if (Test-Path "$older\python.exe") { throw 'the upgrade did not remove the older install' }
           if (-not (Test-Path "$prefix\python.exe")) { throw "nothing installed in $prefix" }
 
