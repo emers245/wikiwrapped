@@ -14,7 +14,9 @@ ported from the old exploratory fit that produced good topic separation.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import logging
 import os
@@ -68,7 +70,12 @@ def load_reducer(reference_dir: str | Path | None = None):
     if "NUMBA_CACHE_DIR" not in os.environ:
         numba_cache.mkdir(parents=True, exist_ok=True)
         os.environ["NUMBA_CACHE_DIR"] = str(numba_cache)
-    with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle:
+    # The nearest-neighbor index inside the reducer rebuilds its search
+    # function while being unpickled, announcing it on stdout ("Building and
+    # compiling search function") because it was fitted verbose; that line
+    # is dropped rather than reaching the app log.
+    with open(_artifact(reference_dir, REDUCER_FILE), "rb") as handle, \
+            contextlib.redirect_stdout(io.StringIO()):
         reducer = pickle.load(handle)
     # The build fits with verbose=True for its own console, and that choice
     # is pickled with the reducer twice over: the verbose flag (epoch
@@ -78,8 +85,7 @@ def load_reducer(reference_dir: str | Path | None = None):
     reducer.verbose = False
     if isinstance(getattr(reducer, "tqdm_kwds", None), dict):
         reducer.tqdm_kwds["disable"] = True
-    # The nearest-neighbor index inside it keeps a verbose flag of its own
-    # ("Building and compiling search function" on the first transform).
+    # ...and the index keeps a verbose flag of its own, for later rebuilds.
     index = getattr(reducer, "_knn_search_index", None)
     if index is not None and hasattr(index, "verbose"):
         index.verbose = False

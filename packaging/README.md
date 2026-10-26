@@ -498,5 +498,22 @@ on the default branch (`main`).
 
 GitHub's free plan includes 2,000 Actions minutes a month for private
 repositories, and macOS minutes count ten times, Windows twice (the
-billing page now lists per-minute prices instead, in the same ratio). A
-full run is dominated by the two macOS jobs.
+billing page now lists per-minute prices instead, in the same ratio).
+Each job's time is rounded up to whole minutes. Measured 2026-10-26, with
+the caches warm:
+
+| Job | Minutes | Counted |
+|---|---|---|
+| Check the version | under 1 | 1 |
+| macOS Apple Silicon | 4.5 | 50 |
+| macOS Intel | 11-12 (17 with an empty cache) | 120 (170) |
+| Windows x64 | about 26 | about 52 |
+| Draft the release | under 1 | 1 |
+| **One full run** | | **about 225** |
+
+So the free allowance covers about eight full runs a month; a failed job
+stops early and costs less. Most of it is the Intel Mac. Making the
+repository public makes all of it free.
+
+Installer sizes with the full reference space (v1): Apple Silicon 545 MB,
+Intel 689 MB, Windows 750 MB.
