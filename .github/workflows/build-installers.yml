@@ -71,8 +71,9 @@ jobs:
     timeout-minutes: 90
     defaults:
       run:
-        # A login shell, so the conda that setup-miniconda installs is set up.
-        shell: bash -el {0}
+        # Git Bash on Windows. conda is called by its full name on PATH (set
+        # below), never through shell activation.
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
       # One package cache for every conda step, including the installer
@@ -99,11 +100,25 @@ jobs:
           path: packaging/build/resources/models
           key: model-${{ hashFiles('packaging/model.json') }}
 
+      # Only conda itself is needed: every step names its environment
+      # (conda run -n ...), so no shell is activated. Skipping `conda init`
+      # (run-init) also avoids its failure on the Windows runners
+      # ("needs sudo" for Scripts\conda.exe, 2026-10-26).
       - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           activate-environment: ""
           auto-activate: false
+          run-init: false
+          conda-remove-defaults: true
+
+      - name: Put conda on PATH
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "${CONDA}\\Scripts" >> "$GITHUB_PATH"
+          else
+            echo "${CONDA}/bin" >> "$GITHUB_PATH"
+          fi
 
       # The app's runtime exactly as the installer ships it (the lock and
       # the hash-locked wheels), plus pytest, to test what is shipped.
