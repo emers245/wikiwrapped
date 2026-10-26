@@ -10,6 +10,8 @@
 #               installer (Milestone 3).
 # rattler-build builds the app's own code into a small local conda package,
 #               which is how menuinst shortcuts get installed (Milestone 3).
+# gh            the GitHub CLI: uploads the reference space, manages
+#               releases, reads workflow runs.
 # pillow        draws the placeholder icon and converts the icon source to
 #               .icns and .ico (packaging/icon/make_icons.py).
 # uv            resolves the pywebview wheels for each TARGET platform
@@ -33,4 +35,5 @@ dependencies:
   - conda-standalone=26.7.0
   - rattler-build=0.77.0
   - pillow=12.3.0
+  - gh=2.102.0
   - uv=0.13.5
