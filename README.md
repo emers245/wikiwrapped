@@ -1,6 +1,6 @@
-# Wikipedia Wrapped
+# WikiWrapped
 
-Wikipedia Wrapped shows what you have been reading on Wikipedia: a map of
+WikiWrapped shows what you have been reading on Wikipedia: a map of
 the topics you read about, the paths you took from one article to the
 next, and when you read them. It builds all of this from your own browsing
 history (Google Chrome, and optionally Google Takeout archives), on your
@@ -12,7 +12,7 @@ leaves your computer", has the details).
 
 ## Download and install
 
-Wikipedia Wrapped runs on macOS 11 or later (Apple silicon or Intel) and on
+WikiWrapped runs on macOS 11 or later (Apple silicon or Intel) and on
 64-bit Windows 10 or 11. It installs for you only, needs no administrator
 password, and keeps everything it reads and saves on your computer.
 
@@ -51,7 +51,7 @@ computer asks you to confirm once before running each one.
 3. Follow the installer. It installs for you only, without asking for an
    administrator password. Near the end it sits still for a few minutes
    while it prepares the app; notifications show it is still working.
-4. Open the app: press **Command-Space**, type Wikipedia Wrapped, and press
+4. Open the app: press **Command-Space**, type WikiWrapped, and press
    Return. It is also in the **Applications** folder inside your home
    folder (in Finder, **Go > Home**); drag it to the Dock to keep it there.
 
@@ -100,7 +100,7 @@ later picks up where you left off.
   your Applications folder. Dragging the app to the Trash is not enough:
   it leaves the program folder, about 2 GB, behind.
 - **Windows:** **Settings > Apps > Installed apps** (on Windows 10, **Apps
-  & features**), find **Wikipedia Wrapped**, and choose **Uninstall**.
+  & features**), find **WikiWrapped**, and choose **Uninstall**.
 
 To remove your data as well, delete the data folder below afterwards,
 after copying `data/visits.jsonl` somewhere safe if you might want it. If
