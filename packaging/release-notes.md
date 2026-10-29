@@ -22,7 +22,7 @@ means Apple silicon; a "Processor" line naming Intel means Intel.
 The installers are not code-signed yet, so macOS and Windows ask you to
 confirm once before running them: on a Mac, System Settings > Privacy &
 Security > **Open Anyway**; on Windows, **More info** > **Run anyway**. The
-README's [Download and install](https://github.com/emers245/wikipedia-wrapped#download-and-install)
+README's [Download and install](https://github.com/emers245/wikiwrapped#download-and-install)
 section walks through every step, and through updating and uninstalling.
 Updating: quit the app and run the new installer; it replaces the old
 version and keeps your data.

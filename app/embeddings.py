@@ -69,7 +69,7 @@ def get_model():
         if not (local / "modules.json").is_file() and installed:
             raise ModelMissing(
                 f"The bundled language model is missing from {local}. "
-                "Reinstall Wikipedia Wrapped to restore it."
+                "Reinstall WikiWrapped to restore it."
             )
         from sentence_transformers import SentenceTransformer
 

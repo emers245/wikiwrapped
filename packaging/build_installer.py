@@ -1,8 +1,8 @@
-"""Build the Wikipedia Wrapped installer for this computer's platform.
+"""Build the WikiWrapped installer for this computer's platform.
 
-    conda run -n wikipedia-wrapped-build python packaging/build_installer.py
+    conda run -n wikiwrapped-build python packaging/build_installer.py
 
-Makes packaging/build/dist/WikipediaWrapped-<version>-<platform>.pkg (macOS)
+Makes packaging/build/dist/WikiWrapped-<version>-<platform>.pkg (macOS)
 or .exe (Windows). Installers are built on the platform they are for: an
 Intel Mac builds the Intel .pkg, the GitHub runners build the rest
 (Milestone 4). Everything it writes stays under packaging/build/, which is
@@ -148,7 +148,7 @@ def build_app_package(version: str) -> Path:
     run(["rattler-build", "build", "--recipe", PACKAGING / "recipe" / "recipe.yaml",
          "--output-dir", CHANNEL, "-c", "conda-forge"],
         env={**os.environ, "WIKIPEDIA_WRAPPED_VERSION": version})
-    packages = sorted((CHANNEL / "noarch").glob(f"wikipedia-wrapped-{version}-*.conda"))
+    packages = sorted((CHANNEL / "noarch").glob(f"wikiwrapped-{version}-*.conda"))
     if len(packages) != 1:
         raise SystemExit(f"Expected one app package in {CHANNEL / 'noarch'}, found {packages}")
     return packages[0]
@@ -218,7 +218,7 @@ def main(argv=None) -> int:
     version = stage_app.app_version()
     lock = PACKAGING / "locks" / f"{target}.txt"
     build = BUILD / target
-    print(f"Building Wikipedia Wrapped {version} for {target}")
+    print(f"Building WikiWrapped {version} for {target}")
 
     step("Checking the bundled resources")
     check_resources(lock)

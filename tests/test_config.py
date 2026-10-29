@@ -17,15 +17,15 @@ from app import localconfig
 def test_user_agent_names_the_project_and_version(monkeypatch):
     monkeypatch.delenv(config.CONTACT_EMAIL_ENV_VAR, raising=False)
     assert config.get_user_agent() == (
-        f"WikipediaWrapped/{config.APP_VERSION} "
-        "(https://github.com/emers245/wikipedia-wrapped)"
+        f"WikiWrapped/{config.APP_VERSION} "
+        "(https://github.com/emers245/wikiwrapped)"
     )
 
 
 def test_user_agent_appends_an_optional_email(monkeypatch):
     monkeypatch.setenv(config.CONTACT_EMAIL_ENV_VAR, "dev@example.com")
     assert config.get_user_agent().endswith(
-        "(https://github.com/emers245/wikipedia-wrapped; dev@example.com)"
+        "(https://github.com/emers245/wikiwrapped; dev@example.com)"
     )
 
 
@@ -54,14 +54,14 @@ def test_user_data_defaults_to_the_platform_location(monkeypatch):
 
     def fake(appname, appauthor=None, roaming=False):
         calls.update(appname=appname, appauthor=appauthor, roaming=roaming)
-        return "/platform/default/WikipediaWrapped"
+        return "/platform/default/WikiWrapped"
 
     monkeypatch.delenv(config.USER_DATA_ENV_VAR, raising=False)
     monkeypatch.setattr(platformdirs, "user_data_dir", fake)
-    assert config.user_data_dir() == Path("/platform/default/WikipediaWrapped")
+    assert config.user_data_dir() == Path("/platform/default/WikiWrapped")
     # appauthor=False keeps Windows from adding a company folder, and
     # roaming=True picks %APPDATA% rather than %LOCALAPPDATA%.
-    assert calls == {"appname": "WikipediaWrapped", "appauthor": False, "roaming": True}
+    assert calls == {"appname": "WikiWrapped", "appauthor": False, "roaming": True}
 
 
 def test_the_test_suite_never_points_at_real_user_data():

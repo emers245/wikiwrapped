@@ -33,7 +33,7 @@ def test_snapshot_and_changes_report_every_kind_of_write(tmp_path):
 
 def test_the_code_folder_is_watched_once_when_inside_the_installation(monkeypatch, tmp_path):
     prefix = tmp_path / "prefix"
-    code = prefix / "share" / "wikipedia-wrapped"
+    code = prefix / "share" / "wikiwrapped"
     code.mkdir(parents=True)
     monkeypatch.setattr(selftest.sys, "prefix", str(prefix))
     monkeypatch.setattr(config, "PROJECT_ROOT", code)

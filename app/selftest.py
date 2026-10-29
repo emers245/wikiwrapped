@@ -281,7 +281,7 @@ def run() -> list[Result]:
 
 
 def main() -> int:
-    print(f"Wikipedia Wrapped {config.APP_VERSION} self-test "
+    print(f"WikiWrapped {config.APP_VERSION} self-test "
           f"({'installed' if config.is_installed() else 'dev checkout'}, "
           f"Python {sys.version.split()[0]}, {sys.platform})", flush=True)
     results = run()

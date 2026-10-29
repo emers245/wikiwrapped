@@ -1,4 +1,4 @@
-"""Start Wikipedia Wrapped: server, background sync, and the app window.
+"""Start WikiWrapped: server, background sync, and the app window.
 
     python -m app.launcher                 the app window (pywebview)
     python -m app.launcher --browser       a normal browser tab instead
@@ -67,7 +67,7 @@ LOG_FILE = "app.log"
 LOG_MAX_BYTES = 1_000_000
 LOG_BACKUPS = 5
 
-WINDOW_TITLE = "Wikipedia Wrapped"
+WINDOW_TITLE = "WikiWrapped"
 WINDOW_SIZE = (1280, 820)
 WINDOW_MIN_SIZE = (720, 480)
 WINDOW_BACKGROUND = "#faf9f6"   # style.css --bg, so the first paint matches
@@ -339,7 +339,7 @@ def run_browser(url: str, server: ServerThread | None) -> None:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    print(f"Wikipedia Wrapped is running at {url} (Ctrl-C to stop)")
+    print(f"WikiWrapped is running at {url} (Ctrl-C to stop)")
     try:
         while server.alive():
             time.sleep(0.5)
@@ -367,7 +367,7 @@ def launch_job_steps(args) -> list[jobs.Step]:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Launch the Wikipedia Wrapped app window."
+        description="Launch the WikiWrapped app window."
     )
     parser.add_argument("--port", type=int, default=PREFERRED_PORT,
                         help="port to prefer (default %(default)s; any free "
@@ -399,7 +399,7 @@ def main(argv=None) -> int:
         return selftest.main()
     log_path = setup_logging()
     log.info(
-        "Starting Wikipedia Wrapped %s (Python %s, %s %s)",
+        "Starting WikiWrapped %s (Python %s, %s %s)",
         config.APP_VERSION, platform.python_version(), platform.system(),
         platform.machine(),
     )

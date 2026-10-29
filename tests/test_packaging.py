@@ -47,7 +47,7 @@ def staged(tmp_path_factory):
     prefix = tmp_path_factory.mktemp("prefix")
     icons = tmp_path_factory.mktemp("icons")
     for ext in ("icns", "ico"):
-        (icons / f"wikipedia-wrapped.{ext}").write_bytes(b"icon")
+        (icons / f"wikiwrapped.{ext}").write_bytes(b"icon")
     stage_app.stage(prefix, "9.8.7", icons)
     return prefix
 
@@ -62,7 +62,7 @@ def test_the_version_comes_from_config():
 
 
 def test_the_package_holds_the_app_and_nothing_else(staged):
-    code = staged / "share" / "wikipedia-wrapped"
+    code = staged / "share" / "wikiwrapped"
     for rel in ("launch.py", "config.py", "scripts/enrich_pending.py",
                 "app/launcher.py", "app/selftest.py", "app/bundle_fixture.json",
                 "app/static/index.html", "app/static/help.html",
@@ -77,21 +77,21 @@ def test_the_package_holds_the_app_and_nothing_else(staged):
 
 def test_every_help_image_is_packaged(staged):
     help_html = (ROOT / "app" / "static" / "help.html").read_text(encoding="utf-8")
-    static = staged / "share" / "wikipedia-wrapped" / "app" / "static"
+    static = staged / "share" / "wikiwrapped" / "app" / "static"
     for src in re.findall(r'<img[^>]*\bsrc="([^"]+)"', help_html):
         assert (static / src).is_file(), src
 
 
 def test_the_menu_entry_gets_the_version_and_its_icons(staged):
     menu = staged / "Menu"
-    data = json.loads((menu / "wikipedia-wrapped.json").read_text(encoding="utf-8"))
+    data = json.loads((menu / "wikiwrapped.json").read_text(encoding="utf-8"))
     item = data["menu_items"][0]
     assert item["platforms"]["osx"]["CFBundleVersion"] == "9.8.7"
-    assert "@VERSION@" not in (menu / "wikipedia-wrapped.json").read_text(encoding="utf-8")
-    assert (menu / "wikipedia-wrapped.icns").is_file() and (menu / "wikipedia-wrapped.ico").is_file()
+    assert "@VERSION@" not in (menu / "wikiwrapped.json").read_text(encoding="utf-8")
+    assert (menu / "wikiwrapped.icns").is_file() and (menu / "wikiwrapped.ico").is_file()
     # Every command runs the launch script the package installs.
     commands = [item["command"], *(p["command"] for p in item["platforms"].values())]
-    assert all(c[-1] == "{{ PREFIX }}/share/wikipedia-wrapped/launch.py" for c in commands)
+    assert all(c[-1] == "{{ PREFIX }}/share/wikiwrapped/launch.py" for c in commands)
     # No conda activation: it would need a console window on Windows.
     assert item["activate"] is False and item["terminal"] is False
 
@@ -99,7 +99,7 @@ def test_the_menu_entry_gets_the_version_and_its_icons(staged):
 def test_the_packaged_app_runs_from_its_own_folder(staged, tmp_path):
     """Imports and starts from the staged tree alone, as when installed:
     nothing in the app may depend on a repo file that is not packaged."""
-    code = staged / "share" / "wikipedia-wrapped"
+    code = staged / "share" / "wikiwrapped"
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
            config.USER_DATA_ENV_VAR: str(tmp_path / "userdata")}
     env.pop("PYTHONPATH", None)
@@ -124,7 +124,7 @@ def test_the_packaged_app_runs_from_its_own_folder(staged, tmp_path):
 # Values several files must agree on
 # ---------------------------------------------------------------------------
 
-MENU = json.loads((PACKAGING / "menu" / "wikipedia-wrapped.json").read_text(encoding="utf-8"))
+MENU = json.loads((PACKAGING / "menu" / "wikiwrapped.json").read_text(encoding="utf-8"))
 MENU_ITEM = MENU["menu_items"][0]
 
 
@@ -144,17 +144,17 @@ def test_macos_scripts_only_touch_our_own_shortcut():
 
 def test_install_folders_match_what_the_upgrade_and_uninstall_scripts_expect():
     construct = (INSTALLER / "construct.yaml").read_text(encoding="utf-8")
-    # macOS: versions live in ~/Library/WikipediaWrapped-App/v<version>.
-    assert "default_location_pkg: Library/WikipediaWrapped-App  # [osx]" in construct
+    # macOS: versions live in ~/Library/WikiWrapped-App/v<version>.
+    assert "default_location_pkg: Library/WikiWrapped-App  # [osx]" in construct
     assert 'pkg_name: v{{ environ["WW_VERSION"] }}  # [osx]' in construct
     post = (INSTALLER / "macos" / "post_install.sh").read_text(encoding="utf-8")
     assert '"$INSTALL_ROOT"/v*' in post
-    assert "WikipediaWrapped-App/uninstall.sh" in (INSTALLER / "macos" / "uninstall.sh").read_text()
+    assert "WikiWrapped-App/uninstall.sh" in (INSTALLER / "macos" / "uninstall.sh").read_text()
     # Windows: an older version is found by its "Installed apps" name.
     name = re.search(r"^uninstall_name: (.+?)  # \[win\]$", construct, re.M).group(1)
-    assert name.startswith("Wikipedia Wrapped ")
+    assert name.startswith("WikiWrapped ")
     pre = (INSTALLER / "windows" / "pre_install.bat").read_text(encoding="utf-8")
-    assert "-notlike 'Wikipedia Wrapped *'" in pre
+    assert "-notlike 'WikiWrapped *'" in pre
 
 
 def test_only_selector_lines_end_in_brackets():
@@ -167,7 +167,7 @@ def test_only_selector_lines_end_in_brackets():
 def test_packaging_files_are_plain_ascii():
     for path in [*PACKAGING.rglob("*.py"), *PACKAGING.rglob("*.sh"),
                  *PACKAGING.rglob("*.bat"), *PACKAGING.rglob("*.yaml"),
-                 *PACKAGING.rglob("*.txt"), PACKAGING / "menu" / "wikipedia-wrapped.json"]:
+                 *PACKAGING.rglob("*.txt"), PACKAGING / "menu" / "wikiwrapped.json"]:
         if "build" in path.relative_to(PACKAGING).parts:
             continue
         path.read_bytes().decode("ascii")
@@ -209,9 +209,9 @@ def test_the_workflow_builds_every_locked_platform_with_matching_names():
         assert re.search(rf"^installer_filename: .*\.{entry['installer']}  #", construct, re.M)
     # The steps look for the install where construct.yaml puts it.
     steps = WORKFLOW_PATH.read_text(encoding="utf-8")
-    assert "Library/WikipediaWrapped-App" in steps and "'WikipediaWrapped-App'" in steps
-    assert "Uninstall-WikipediaWrapped.exe" in steps
-    assert re.search(r"^name: WikipediaWrapped$", construct, re.M)
+    assert "Library/WikiWrapped-App" in steps and "'WikiWrapped-App'" in steps
+    assert "Uninstall-WikiWrapped.exe" in steps
+    assert re.search(r"^name: WikiWrapped$", construct, re.M)
     # Only the release job may write to the repository.
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["release"]["permissions"] == {"contents": "write"}

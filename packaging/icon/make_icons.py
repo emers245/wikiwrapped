@@ -37,7 +37,7 @@ from PIL import Image, ImageChops, ImageColor, ImageDraw
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "icon.png"
 DEFAULT_OUT = HERE.parent / "build" / "icon"
-NAME = "wikipedia-wrapped"     # the menu shortcut refers to this name
+NAME = "wikiwrapped"     # the menu shortcut refers to this name
 
 SIZE = 1024
 ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]

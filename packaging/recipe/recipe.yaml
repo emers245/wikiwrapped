@@ -16,7 +16,7 @@ context:
   version: ${{ env.get("WIKIPEDIA_WRAPPED_VERSION") }}
 
 package:
-  name: wikipedia-wrapped
+  name: wikiwrapped
   version: ${{ version }}
 
 build:
@@ -36,5 +36,5 @@ requirements:
     - python 3.12.*
 
 about:
-  homepage: https://github.com/emers245/wikipedia-wrapped
+  homepage: https://github.com/emers245/wikiwrapped
   summary: Your Wikipedia reading history, mapped and summarized.

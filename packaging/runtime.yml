@@ -29,7 +29,7 @@
 # (no form uploads). pywebview is not here because conda-forge has no
 # macOS build of it; it is installed from pinned, hashed wheels instead
 # (packaging/wheels/).
-name: wikipedia-wrapped-runtime
+name: wikiwrapped-runtime
 channels:
   - conda-forge
   - nodefaults

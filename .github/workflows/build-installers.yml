@@ -154,7 +154,7 @@ jobs:
 
       - name: Build the installer
         run: |
-          conda run --no-capture-output -n wikipedia-wrapped-build python packaging/build_installer.py
+          conda run --no-capture-output -n wikiwrapped-build python packaging/build_installer.py
           # Room for the install below: runners have about 14 GB free.
           rm -rf packaging/build/constructor-cache
           df -h .
@@ -168,13 +168,13 @@ jobs:
         run: |
           set -x
           installer -pkg packaging/build/dist/*.pkg -target CurrentUserHomeDirectory
-          root="$HOME/Library/WikipediaWrapped-App"
+          root="$HOME/Library/WikiWrapped-App"
           prefix="$root/v$VERSION"
-          app="$HOME/Applications/Wikipedia Wrapped.app"
+          app="$HOME/Applications/WikiWrapped.app"
           test -d "$app"
-          "$prefix/bin/python" "$prefix/share/wikipedia-wrapped/launch.py" --self-test
+          "$prefix/bin/python" "$prefix/share/wikiwrapped/launch.py" --self-test
           # Again through the shortcut's own Python, as the Dock launches it.
-          "$app/Contents/MacOS/python" "$prefix/share/wikipedia-wrapped/launch.py" --self-test
+          "$app/Contents/MacOS/python" "$prefix/share/wikiwrapped/launch.py" --self-test
           bash "$root/uninstall.sh"
           test ! -e "$root" && test ! -e "$app"
 
@@ -191,7 +191,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = (Get-ChildItem packaging/build/dist/*.exe).FullName
-          $root = Join-Path $env:LOCALAPPDATA 'WikipediaWrapped-App'
+          $root = Join-Path $env:LOCALAPPDATA 'WikiWrapped-App'
           $older = Join-Path $root 'v0.0.0-ci'
           $prefix = Join-Path $root "v$env:VERSION"
 
@@ -214,14 +214,14 @@ jobs:
           if (-not (Test-Path "$prefix\python.exe")) { throw "nothing installed in $prefix" }
 
           $shortcuts = Get-ChildItem -Recurse ([Environment]::GetFolderPath('Programs')),
-              ([Environment]::GetFolderPath('Desktop')) -Filter 'Wikipedia Wrapped.lnk'
+              ([Environment]::GetFolderPath('Desktop')) -Filter 'WikiWrapped.lnk'
           $shortcuts | ForEach-Object { $_.FullName }
           if ($shortcuts.Count -lt 2) { throw 'expected a Start menu and a desktop shortcut' }
 
-          & "$prefix\python.exe" "$prefix\share\wikipedia-wrapped\launch.py" --self-test
+          & "$prefix\python.exe" "$prefix\share\wikiwrapped\launch.py" --self-test
           if ($LASTEXITCODE -ne 0) { throw 'self-test failed' }
 
-          $p = Start-Process "$prefix\Uninstall-WikipediaWrapped.exe" `
+          $p = Start-Process "$prefix\Uninstall-WikiWrapped.exe" `
               -ArgumentList '/S', "_?=$prefix" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "uninstaller exited $($p.ExitCode)" }
           if (Test-Path "$prefix\python.exe") { throw 'uninstall left the program behind' }
@@ -229,7 +229,7 @@ jobs:
       - name: Keep the installer for the release job
         uses: actions/upload-artifact@v7
         with:
-          path: packaging/build/dist/WikipediaWrapped-${{ env.VERSION }}-*.${{ matrix.installer }}
+          path: packaging/build/dist/WikiWrapped-${{ env.VERSION }}-*.${{ matrix.installer }}
           # Uploaded as the file itself (named after it), not zipped again.
           archive: false
           retention-days: 1
@@ -247,7 +247,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          pattern: WikipediaWrapped-*
+          pattern: WikiWrapped-*
           merge-multiple: true
           path: dist
       - name: Create the draft release
@@ -257,7 +257,7 @@ jobs:
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           cd dist
-          installers=(WikipediaWrapped-*)
+          installers=(WikiWrapped-*)
           ls -l "${installers[@]}"
           test "${#installers[@]}" -eq 3
           sha256sum "${installers[@]}" > SHA256SUMS
@@ -265,5 +265,5 @@ jobs:
           flags=(--draft --verify-tag)
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           gh release create "$TAG" "${installers[@]}" SHA256SUMS "${flags[@]}" \
-              --title "Wikipedia Wrapped ${TAG#v}" \
+              --title "WikiWrapped ${TAG#v}" \
               --notes-file ../packaging/release-notes.md

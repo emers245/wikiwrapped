@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Developer shortcut for the Wikipedia Wrapped launcher (app/launcher.py).
+# Developer shortcut for the WikiWrapped launcher (app/launcher.py).
 #
 #   ./run.sh                 open the app window
 #   ./run.sh --browser       open in a normal browser tab instead
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-ENV_NAME="wikipedia-wrapped"
+ENV_NAME="wikiwrapped"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Calling the interpreter by path avoids "conda activate", which only works

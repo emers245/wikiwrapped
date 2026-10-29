@@ -1,30 +1,30 @@
 #!/bin/bash
-# Uninstall Wikipedia Wrapped from this Mac, keeping your data.
+# Uninstall WikiWrapped from this Mac, keeping your data.
 #
-#     bash ~/Library/WikipediaWrapped-App/uninstall.sh
+#     bash ~/Library/WikiWrapped-App/uninstall.sh
 #
-# Removes the program (~/Library/WikipediaWrapped-App) and its shortcut
-# (~/Applications/Wikipedia Wrapped.app). Your history, settings and logs
-# stay in ~/Library/Application Support/WikipediaWrapped, so reinstalling
+# Removes the program (~/Library/WikiWrapped-App) and its shortcut
+# (~/Applications/WikiWrapped.app). Your history, settings and logs
+# stay in ~/Library/Application Support/WikiWrapped, so reinstalling
 # later picks up where you left off. To remove those too, delete that
 # folder after running this (the app's Help, "Uninstalling", says more).
 
 set -euo pipefail
 
 INSTALL_ROOT="$(cd "$(dirname "$0")" && pwd)"
-APP="$HOME/Applications/Wikipedia Wrapped.app"
-OUR_BUNDLE_ID="io.github.emers245.wikipediawrapped"
-DATA="$HOME/Library/Application Support/WikipediaWrapped"
+APP="$HOME/Applications/WikiWrapped.app"
+OUR_BUNDLE_ID="io.github.emers245.wikiwrapped"
+DATA="$HOME/Library/Application Support/WikiWrapped"
 
 # Refuse to run from anywhere that is not an installation of this app:
 # this script deletes the folder it is in.
-if ! compgen -G "$INSTALL_ROOT/v*/conda-meta/wikipedia-wrapped-*.json" > /dev/null; then
-    echo "$INSTALL_ROOT does not look like a Wikipedia Wrapped installation; nothing removed." >&2
+if ! compgen -G "$INSTALL_ROOT/v*/conda-meta/wikiwrapped-*.json" > /dev/null; then
+    echo "$INSTALL_ROOT does not look like a WikiWrapped installation; nothing removed." >&2
     exit 1
 fi
 
 if pgrep -f "$INSTALL_ROOT/.*/launch.py" > /dev/null; then
-    echo "Wikipedia Wrapped is running. Quit it (Wikipedia Wrapped > Quit), then run this again." >&2
+    echo "WikiWrapped is running. Quit it (WikiWrapped > Quit), then run this again." >&2
     exit 1
 fi
 
@@ -40,6 +40,6 @@ fi
 rm -rf "$INSTALL_ROOT"
 echo "Removed $INSTALL_ROOT"
 echo
-echo "Wikipedia Wrapped is uninstalled. Your data are still in:"
+echo "WikiWrapped is uninstalled. Your data are still in:"
 echo "  $DATA"
 echo "Delete that folder too if you no longer want them."

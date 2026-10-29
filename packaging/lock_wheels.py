@@ -1,7 +1,7 @@
 """Lock the pip-installed wheels (pywebview and its pip-only dependencies)
 for every target platform, with sha256 hashes.
 
-    conda run -n wikipedia-wrapped-build python packaging/lock_wheels.py
+    conda run -n wikiwrapped-build python packaging/lock_wheels.py
 
 Reads packaging/wheels/requirements.in and the conda locks in
 packaging/locks/, and writes packaging/wheels/requirements-<platform>.txt.

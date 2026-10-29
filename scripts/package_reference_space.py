@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config  # noqa: E402
 from app import bundle, umap_space  # noqa: E402
 
-REPO = "emers245/wikipedia-wrapped"
+REPO = "emers245/wikiwrapped"
 ANCHOR = config.PROJECT_ROOT / "packaging" / "reference-space.json"
 BUILD_DIR = config.PROJECT_ROOT / "packaging" / "build"
 LOCKS = config.PROJECT_ROOT / "packaging" / "locks"

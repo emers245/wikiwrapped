@@ -190,7 +190,7 @@ def authorize_account(
             ),
             success_message=(
                 "Authorized. You can close this tab and return to "
-                "Wikipedia Wrapped."
+                "WikiWrapped."
             ),
         )
     except Exception as exc:

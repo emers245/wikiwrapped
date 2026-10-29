@@ -446,7 +446,7 @@ def build_visits(rows: list[tuple[str, str, float | None]]) -> tuple[list[dict],
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Extract Wikipedia visits from browser history into the "
-        "standardized JSON that wikipedia-wrapped ingests."
+        "standardized JSON that wikiwrapped ingests."
     )
     parser.add_argument(
         "--input",

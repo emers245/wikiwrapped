@@ -17,7 +17,7 @@ if errorlevel 1 exit /b 1
 rmdir /s /q "%PREFIX%\wheels"
 
 echo Compiling the app
-"%PREFIX%\python.exe" -m compileall -q -j 0 "%PREFIX%\share\wikipedia-wrapped" > NUL
+"%PREFIX%\python.exe" -m compileall -q -j 0 "%PREFIX%\share\wikiwrapped" > NUL
 if errorlevel 1 exit /b 1
 
 rem Load every library once, so that the operating system's first-load
@@ -25,8 +25,8 @@ rem checks (antivirus scanning on Windows) happen now rather than during the
 rem first launch; see the macOS script. Only a speed-up, so a failure is
 rem reported but does not fail the installation.
 echo Preparing the app's libraries for their first use
-set "NUMBA_CACHE_DIR=%TEMP%\wikipedia-wrapped-warmup"
-pushd "%PREFIX%\share\wikipedia-wrapped"
+set "NUMBA_CACHE_DIR=%TEMP%\wikiwrapped-warmup"
+pushd "%PREFIX%\share\wikiwrapped"
 "%PREFIX%\python.exe" -B -c "from app.selftest import check_imports; check_imports()"
 set "WARMUP_RESULT=%ERRORLEVEL%"
 popd

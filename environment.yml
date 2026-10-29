@@ -1,6 +1,6 @@
-# Developer environment for Wikipedia Wrapped (repo_spec S9, D8).
+# Developer environment for WikiWrapped (repo_spec S9, D8).
 # Build:  conda env create -f environment.yml
-# Verify: conda run -n wikipedia-wrapped python scripts/check_env.py --full
+# Verify: conda run -n wikiwrapped python scripts/check_env.py --full
 #
 # This is the installed app's runtime spec (packaging/runtime.yml) plus
 # developer tools. The first block below must stay identical to that file:
@@ -8,7 +8,7 @@
 # here or differs, so the app is never developed against packages the
 # installer would not ship. Change runtime entries in packaging/runtime.yml
 # first, re-lock (packaging/README.md), then copy the change here.
-name: wikipedia-wrapped
+name: wikiwrapped
 channels:
   - conda-forge
   - nodefaults

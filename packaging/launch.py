@@ -1,6 +1,6 @@
-"""Start the installed Wikipedia Wrapped: what the app's shortcuts run.
+"""Start the installed WikiWrapped: what the app's shortcuts run.
 
-    <install folder>/share/wikipedia-wrapped/launch.py [launcher options]
+    <install folder>/share/wikiwrapped/launch.py [launcher options]
 
 packaging/stage_app.py copies this file to the top of the installed code
 folder, next to config.py, so Python puts that folder on sys.path and the
@@ -19,7 +19,7 @@ import sys
 # (tests/test_packaging.py checks): Windows groups a running program under
 # the shortcut that started it, with that shortcut's name and icon, only
 # when the two IDs agree. Otherwise the taskbar shows a generic Python.
-APP_USER_MODEL_ID = "emers245.WikipediaWrapped"
+APP_USER_MODEL_ID = "emers245.WikiWrapped"
 
 # Bytecode caches are never written: Python would otherwise put __pycache__
 # folders into the install folder, which an app must not write to (it may

@@ -71,7 +71,7 @@ def create_app(
     job_runner: jobs.JobRunner | None = None,
     allowed_hosts: tuple[str, ...] = LOOPBACK_HOSTS,
 ) -> FastAPI:
-    app = FastAPI(title="Wikipedia Wrapped", version=config.APP_VERSION)
+    app = FastAPI(title="WikiWrapped", version=config.APP_VERSION)
     db_path = db_path or config.DB_PATH
     reference_dir = reference_dir or config.REFERENCE_DIR
     runner = job_runner or jobs.JobRunner()

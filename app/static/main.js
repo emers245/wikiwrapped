@@ -1,4 +1,4 @@
-/* Wikipedia Wrapped frontend bootstrap: fetches /dashboard once, owns the
+/* WikiWrapped frontend bootstrap: fetches /dashboard once, owns the
    shared topic palette, the hover popup, and the two cross-component
    buses - transient highlight (hover) and persistent filter (selection).
    Muted palette on an off-white theme. */

@@ -17,7 +17,7 @@ WikiWrapped runs on macOS 11 or later (Apple silicon or Intel) and on
 password, and keeps everything it reads and saves on your computer.
 
 The installers are on the
-[Releases page](https://github.com/emers245/wikipedia-wrapped/releases)
+[Releases page](https://github.com/emers245/wikiwrapped/releases)
 (while the repository is private, only people with access to it can see
 them). Download the one for your computer:
 
@@ -93,10 +93,10 @@ later picks up where you left off.
   and run
 
   ```bash
-  bash ~/Library/WikipediaWrapped-App/uninstall.sh
+  bash ~/Library/WikiWrapped-App/uninstall.sh
   ```
 
-  It removes the program (`~/Library/WikipediaWrapped-App`) and the app in
+  It removes the program (`~/Library/WikiWrapped-App`) and the app in
   your Applications folder. Dragging the app to the Trash is not enough:
   it leaves the program folder, about 2 GB, behind.
 - **Windows:** **Settings > Apps > Installed apps** (on Windows 10, **Apps
@@ -111,8 +111,8 @@ access at [myaccount.google.com/connections](https://myaccount.google.com/connec
 
 | | Mac | Windows |
 |---|---|---|
-| Your data (history, settings, logs) | `~/Library/Application Support/WikipediaWrapped` | `%APPDATA%\WikipediaWrapped` |
-| The program | `~/Library/WikipediaWrapped-App` | `%LOCALAPPDATA%\WikipediaWrapped-App` |
+| Your data (history, settings, logs) | `~/Library/Application Support/WikiWrapped` | `%APPDATA%\WikiWrapped` |
+| The program | `~/Library/WikiWrapped-App` | `%LOCALAPPDATA%\WikiWrapped-App` |
 | The shortcut | `Applications` in your home folder | Start menu and desktop |
 
 If the app does not open, the in-app Help ("Troubleshooting") explains how
@@ -148,3 +148,7 @@ in [packaging/README.md](packaging/README.md).
 # Why and how I built the app
 
 This is a passion project. I wanted to develop some code I had written to analyze my Wikipedia reading history that I had original written in 2024. I used this as an opportunity to teach myself how to use coding agents. I used Claude Opus 5.5 and Claude Fable extensively to develop interactive visualizations, create a graphical user interface, and build the application machinery.
+
+# DISCLAIMER
+
+This projecg is not affiliated with or endorsed by the Wikimedia Foundation; Wikipedia is a trademark of the Wikimedia Foundation.

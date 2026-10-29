@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Terminal setup for Wikipedia Wrapped's sources and sync preferences.
+"""Terminal setup for WikiWrapped's sources and sync preferences.
 
     python scripts/setup_takeout.py                  # interactive setup
     python scripts/setup_takeout.py --status         # show current settings
@@ -270,7 +270,7 @@ def choose_drive(settings: dict) -> dict:
 
 
 def interactive(settings: dict) -> dict:
-    print("Wikipedia Wrapped: setup")
+    print("WikiWrapped: setup")
     print("=" * 42)
     print(
         "\nLocal Chrome history is read directly. Google Takeout adds history\n"
@@ -291,7 +291,7 @@ def interactive(settings: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Set up Wikipedia Wrapped's history sources and sync."
+        description="Set up WikiWrapped's history sources and sync."
     )
     parser.add_argument("--status", action="store_true",
                         help="Print the current settings and exit")

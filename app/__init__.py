@@ -1,1 +1,1 @@
-"""Wikipedia Wrapped backend: ingest -> normalize -> store -> analyze -> serve."""
+"""WikiWrapped backend: ingest -> normalize -> store -> analyze -> serve."""

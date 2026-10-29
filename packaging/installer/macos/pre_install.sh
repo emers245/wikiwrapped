@@ -4,14 +4,14 @@
 # shortcut is made. Runs as the user (a "just me" install), never as root.
 #
 # Makes way for the shortcut: menuinst refuses to create
-# ~/Applications/Wikipedia Wrapped.app when one exists, which it does after
+# ~/Applications/WikiWrapped.app when one exists, which it does after
 # any earlier install. The old version's folder is removed later, by
 # post_install.sh, once this version is known to be in place.
 
 set -euo pipefail
 
-APP="$HOME/Applications/Wikipedia Wrapped.app"
-OUR_BUNDLE_ID="io.github.emers245.wikipediawrapped"
+APP="$HOME/Applications/WikiWrapped.app"
+OUR_BUNDLE_ID="io.github.emers245.wikiwrapped"
 
 if [[ -d "$APP" ]]; then
     # Only ever our own shortcut: another app of the same name is left
@@ -23,6 +23,6 @@ if [[ -d "$APP" ]]; then
         echo "Removing the previous version's shortcut: $APP"
         rm -rf "$APP"
     else
-        echo "Leaving $APP alone: it is not Wikipedia Wrapped's ($bundle_id)"
+        echo "Leaving $APP alone: it is not WikiWrapped's ($bundle_id)"
     fi
 fi

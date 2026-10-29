@@ -11,12 +11,12 @@ import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-APP_NAME = "WikipediaWrapped"
+APP_NAME = "WikiWrapped"
 # The one place the version is set: the installers and the app's conda
 # package take it from here (packaging/build_installer.py), and a release's
 # git tag must be v<this>.
 APP_VERSION = "0.1.0"
-PROJECT_URL = "https://github.com/emers245/wikipedia-wrapped"
+PROJECT_URL = "https://github.com/emers245/wikiwrapped"
 
 # ---------------------------------------------------------------------------
 # Paths: two kinds of storage, kept strictly apart
@@ -46,9 +46,9 @@ def user_data_dir() -> Path:
     app at a scratch directory without touching real data. Otherwise the
     platform default, which platformdirs knows for every OS:
 
-        macOS    ~/Library/Application Support/WikipediaWrapped
-        Windows  %APPDATA%\\WikipediaWrapped   (roaming=True)
-        Linux    $XDG_DATA_HOME/WikipediaWrapped, else ~/.local/share/...
+        macOS    ~/Library/Application Support/WikiWrapped
+        Windows  %APPDATA%\\WikiWrapped   (roaming=True)
+        Linux    $XDG_DATA_HOME/WikiWrapped, else ~/.local/share/...
 
     appauthor=False stops Windows from nesting it under a company folder.
     """
@@ -196,7 +196,7 @@ CONTACT_EMAIL_ENV_VAR = "WIKIPEDIA_WRAPPED_EMAIL"
 
 
 def get_user_agent() -> str:
-    """WikipediaWrapped/<version> (<project url>[; <optional email>])."""
+    """WikiWrapped/<version> (<project url>[; <optional email>])."""
     contact = PROJECT_URL
     email = os.environ.get(CONTACT_EMAIL_ENV_VAR, "").strip()
     if email:

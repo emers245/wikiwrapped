@@ -9,7 +9,7 @@ rem "Installed apps" (the per-user uninstall keys), run silently, and with
 rem _?= so that it runs in place and this script waits for it (without it,
 rem an NSIS uninstaller copies itself away and returns at once). That
 rem uninstaller removes the old program and its shortcuts; user data, in
-rem %APPDATA%\WikipediaWrapped, are never touched. Running it before the
+rem %APPDATA%\WikiWrapped, are never touched. Running it before the
 rem new shortcuts exist matters: they have the same names.
 rem
 rem The PowerShell below is written without double quotes inside it
@@ -22,7 +22,7 @@ rem with a reduced PATH that leaves PowerShell's folder out.
   "$keys = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall';" ^
   "foreach ($key in Get-ChildItem $keys -ErrorAction SilentlyContinue) {" ^
   "  $entry = Get-ItemProperty $key.PSPath;" ^
-  "  if ($entry.DisplayName -notlike 'Wikipedia Wrapped *' -or -not $entry.UninstallString) { continue }" ^
+  "  if ($entry.DisplayName -notlike 'WikiWrapped *' -or -not $entry.UninstallString) { continue }" ^
   "  $exe = $entry.UninstallString.Trim([char]34);" ^
   "  $folder = Split-Path $exe;" ^
   "  if ($folder -eq $env:PREFIX -or -not (Test-Path $exe)) { continue }" ^

@@ -90,9 +90,9 @@ def unescape(html):
 def test_help_and_readme_name_the_same_files_folders_and_commands():
     shared = [
         "-macOS-AppleSilicon.pkg", "-macOS-Intel.pkg", "-Windows-x64.exe",
-        "bash ~/Library/WikipediaWrapped-App/uninstall.sh",
-        "~/Library/Application Support/WikipediaWrapped",
-        "%APPDATA%\\WikipediaWrapped",
+        "bash ~/Library/WikiWrapped-App/uninstall.sh",
+        "~/Library/Application Support/WikiWrapped",
+        "%APPDATA%\\WikiWrapped",
         "Open Anyway", "More info", "Run anyway", "Smart App Control",
         "About This Mac", "Source code",
     ]
@@ -104,12 +104,12 @@ def test_help_and_readme_name_the_same_files_folders_and_commands():
 
 def test_the_documented_names_and_folders_are_the_installers_own():
     for suffix in ("macOS-AppleSilicon.pkg", "macOS-Intel.pkg", "Windows-x64.exe"):
-        assert re.search(rf"^installer_filename: WikipediaWrapped-.*-{re.escape(suffix)}  #",
+        assert re.search(rf"^installer_filename: WikiWrapped-.*-{re.escape(suffix)}  #",
                          CONSTRUCT, re.M), suffix
-    assert "default_location_pkg: Library/WikipediaWrapped-App  # [osx]" in CONSTRUCT
-    assert "%LOCALAPPDATA%\\WikipediaWrapped-App\\v" in CONSTRUCT
+    assert "default_location_pkg: Library/WikiWrapped-App  # [osx]" in CONSTRUCT
+    assert "%LOCALAPPDATA%\\WikiWrapped-App\\v" in CONSTRUCT
     uninstall = (PACKAGING / "installer" / "macos" / "uninstall.sh").read_text(encoding="utf-8")
-    assert "bash ~/Library/WikipediaWrapped-App/uninstall.sh" in uninstall
+    assert "bash ~/Library/WikiWrapped-App/uninstall.sh" in uninstall
     # The self-check commands in Help point at the installed launch script.
-    assert HELP.count("share/wikipedia-wrapped/launch.py --self-test") == 1
-    assert HELP.count("share\\wikipedia-wrapped\\launch.py\" --self-test") == 1
+    assert HELP.count("share/wikiwrapped/launch.py --self-test") == 1
+    assert HELP.count("share\\wikiwrapped\\launch.py\" --self-test") == 1

@@ -1,4 +1,4 @@
-# Wikipedia Wrapped: developer notes
+# WikiWrapped: developer notes
 
 How to run, test and extend the app from a source checkout. For what the
 app is and how to install it, see the [README](README.md); for the user
@@ -15,12 +15,12 @@ anything else:
 
 ```bash
 conda env create -f environment.yml
-conda activate wikipedia-wrapped
+conda activate wikiwrapped
 python scripts/check_env.py --full
 ```
 
 Wikimedia asks every API client to identify itself. The app sends
-`WikipediaWrapped/<version> (https://github.com/emers245/wikipedia-wrapped)`,
+`WikiWrapped/<version> (https://github.com/emers245/wikiwrapped)`,
 so no personal contact address is needed. A developer who wants their own
 address in it as well can set `WIKIPEDIA_WRAPPED_EMAIL`; it is appended, never
 required. (`contact_email.txt` is no longer read and can be deleted.)
@@ -32,9 +32,9 @@ per-user data, in the platform's standard location:
 
 | OS | User-data directory |
 |---|---|
-| macOS | `~/Library/Application Support/WikipediaWrapped` |
-| Windows | `%APPDATA%\WikipediaWrapped` |
-| Linux | `$XDG_DATA_HOME/WikipediaWrapped` (usually `~/.local/share/...`) |
+| macOS | `~/Library/Application Support/WikiWrapped` |
+| Windows | `%APPDATA%\WikiWrapped` |
+| Linux | `$XDG_DATA_HOME/WikiWrapped` (usually `~/.local/share/...`) |
 
 Inside it: `data/visits.jsonl` (the visit log), `data/app.db`,
 `data/sync_state.json`, `config.local.toml`, `tokens/`, any
@@ -537,7 +537,7 @@ environment by path (so no `conda activate` first) and execs the launcher
 with the same flags, so an existing alias keeps working:
 
 ```bash
-alias wikiwrapped="$HOME/Documents/GitHub/wikipedia-wrapped/run.sh"
+alias wikiwrapped="$HOME/Documents/GitHub/wikiwrapped/run.sh"
 ```
 
 **Why the background work runs in child processes, not threads**

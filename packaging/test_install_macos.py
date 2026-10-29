@@ -38,9 +38,9 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-APP_NAME = "Wikipedia Wrapped.app"
-BUNDLE_ID = "io.github.emers245.wikipediawrapped"
-INSTALL_ROOT = Path("Library") / "WikipediaWrapped-App"
+APP_NAME = "WikiWrapped.app"
+BUNDLE_ID = "io.github.emers245.wikiwrapped"
+INSTALL_ROOT = Path("Library") / "WikiWrapped-App"
 
 
 def sh(cmd, **kwargs) -> subprocess.CompletedProcess:
@@ -87,7 +87,7 @@ def install(pkg: Path, scratch: Path, env: dict) -> None:
 def fake_previous_version(home: Path) -> tuple[Path, Path]:
     old = home / INSTALL_ROOT / "v0.0.1"
     (old / "conda-meta").mkdir(parents=True)
-    (old / "conda-meta" / "wikipedia-wrapped-0.0.1-h0_0.json").write_text("{}")
+    (old / "conda-meta" / "wikiwrapped-0.0.1-h0_0.json").write_text("{}")
     app = home / "Applications" / APP_NAME
     (app / "Contents").mkdir(parents=True)
     with open(app / "Contents" / "Info.plist", "wb") as handle:
@@ -126,9 +126,9 @@ def main(argv=None) -> int:
     old_version, app = fake_previous_version(home)
     install(pkg, scratch, env)
 
-    version = re.search(r"WikipediaWrapped-(\d+\.\d+\.\d+)-", pkg.name).group(1)
+    version = re.search(r"WikiWrapped-(\d+\.\d+\.\d+)-", pkg.name).group(1)
     prefix = home / INSTALL_ROOT / f"v{version}"
-    code = prefix / "share" / "wikipedia-wrapped"
+    code = prefix / "share" / "wikiwrapped"
     print("\n== Checking the installation")
     info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes()) if app.exists() else {}
     check(info.get("CFBundleIdentifier") == BUNDLE_ID, f"shortcut {app} is ours", failures)

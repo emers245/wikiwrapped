@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wikipedia Wrapped Help</title>
+<title>WikiWrapped Help</title>
 <!-- The single source of the app's user help. Shown inside the app window
      (the Help button, and the help links in Settings) and readable on its
      own in a browser; the README and DEVELOPMENT.md point here instead of
@@ -116,7 +116,7 @@
 <body>
 <div class="page">
 
-<h1>Wikipedia Wrapped Help</h1>
+<h1>WikiWrapped Help</h1>
 <p class="lead">What the app does, how to read it, where your history comes
 from, and what to do when something does not work.</p>
 
@@ -139,7 +139,7 @@ from, and what to do when something does not work.</p>
 <!-- ===================================================================== -->
 <h2 id="getting-started">Getting started</h2>
 
-<p>Wikipedia Wrapped shows what you have been reading on Wikipedia: a map
+<p>WikiWrapped shows what you have been reading on Wikipedia: a map
 of the topics, the paths you took from one article to the next, and when
 you read them. Everything is built from your own browsing history, on your
 own computer.</p>
@@ -259,7 +259,7 @@ Everything else in your history is ignored and never stored.</p>
   <li><strong>The titles of the Wikipedia articles you visited</strong> are
     sent to Wikipedia's public services (run by the Wikimedia Foundation) to
     look up each article's topic, summary, and popularity. Requests are
-    identified only as coming from "Wikipedia Wrapped".
+    identified only as coming from "WikiWrapped".
     Your other browsing, your name, and your account are not sent.</li>
   <li><strong>Only if you use the Advanced Google Drive option</strong>: the
     app signs in to your own Google Drive (read-only) and downloads your
@@ -275,7 +275,7 @@ accounts, no analytics, and no servers of the app's own.</p>
 <p>Optional, but worth it if you want history from before the last 90 days,
 or from your phone and other computers. Google Takeout exports the Chrome
 history saved in your Google account (when Chrome sync is on). You set it
-up once to repeat every two months, and point Wikipedia Wrapped at the
+up once to repeat every two months, and point WikiWrapped at the
 folder where the archives arrive. No sign-in to Google is needed in the
 app.</p>
 
@@ -344,7 +344,7 @@ after that, set it up again.</p>
     <span class="ui">Settings &gt; Preferences &gt; Google Drive</span>, and
     under <span class="ui">My Drive syncing options</span> choose
     <span class="ui">Mirror files</span>.</li>
-  <li>In Wikipedia Wrapped, open <span class="ui">Settings</span>, and under
+  <li>In WikiWrapped, open <span class="ui">Settings</span>, and under
     <span class="ui">Google Takeout</span> click
     <span class="ui">Add a folder...</span> and choose that Takeout folder.
     Give it a label, such as your Google email, so you can tell accounts
@@ -363,7 +363,7 @@ after that, set it up again.</p>
   <li>Put the downloaded <code>takeout-....zip</code> files in one folder,
     for example a "Wikipedia Takeout" folder in Documents. Leave them as
     zips; do not unzip them.</li>
-  <li>In Wikipedia Wrapped, add that folder in
+  <li>In WikiWrapped, add that folder in
     <span class="ui">Settings &gt; Google Takeout</span>. Repeat the
     download every two months, when Google emails you.</li>
 </ol>
@@ -406,7 +406,7 @@ sees your Google password.</p>
     <span class="ui">Desktop app</span>, and download the JSON file.</li>
 </ol>
 
-<h3>2. Connect it in Wikipedia Wrapped</h3>
+<h3>2. Connect it in WikiWrapped</h3>
 <ol>
   <li>Open <span class="ui">Settings</span>, then the
     <span class="ui">Advanced</span> section.</li>
@@ -504,9 +504,9 @@ ones. If the window still does not appear:</p>
     one).
     <ul>
       <li>Mac, in Terminal:<br>
-        <code>~/Library/WikipediaWrapped-App/v0.1.0/bin/python ~/Library/WikipediaWrapped-App/v0.1.0/share/wikipedia-wrapped/launch.py --self-test</code></li>
+        <code>~/Library/WikiWrapped-App/v0.1.0/bin/python ~/Library/WikiWrapped-App/v0.1.0/share/wikiwrapped/launch.py --self-test</code></li>
       <li>Windows, in Command Prompt:<br>
-        <code>"%LOCALAPPDATA%\WikipediaWrapped-App\v0.1.0\python.exe" "%LOCALAPPDATA%\WikipediaWrapped-App\v0.1.0\share\wikipedia-wrapped\launch.py" --self-test</code></li>
+        <code>"%LOCALAPPDATA%\WikiWrapped-App\v0.1.0\python.exe" "%LOCALAPPDATA%\WikiWrapped-App\v0.1.0\share\wikiwrapped\launch.py" --self-test</code></li>
     </ul></li>
   <li>Uninstalling and installing again repairs a damaged installation.
     Your data are kept (see <a href="#uninstall">Uninstalling</a>).</li>
@@ -526,9 +526,9 @@ article titles you read, so look through them before sharing.</p>
 <p>Everything the app saves is in one folder:</p>
 <table>
   <tr><th>Computer</th><th>Folder</th></tr>
-  <tr><td>Mac</td><td><code>~/Library/Application Support/WikipediaWrapped</code></td></tr>
-  <tr><td>Windows</td><td><code>%APPDATA%\WikipediaWrapped</code></td></tr>
-  <tr><td>Linux</td><td><code>~/.local/share/WikipediaWrapped</code></td></tr>
+  <tr><td>Mac</td><td><code>~/Library/Application Support/WikiWrapped</code></td></tr>
+  <tr><td>Windows</td><td><code>%APPDATA%\WikiWrapped</code></td></tr>
+  <tr><td>Linux</td><td><code>~/.local/share/WikiWrapped</code></td></tr>
 </table>
 <p id="this-computer" hidden>On this computer: <span class="path" id="this-computer-path"></span></p>
 
@@ -570,7 +570,7 @@ nowhere else, unless a Takeout archive has it.</div>
 
 <h3 id="installing">Installing</h3>
 <p>The installers are on the project's
-<a href="https://github.com/emers245/wikipedia-wrapped/releases" target="_blank" rel="noopener">Releases page</a>.
+<a href="https://github.com/emers245/wikiwrapped/releases" target="_blank" rel="noopener">Releases page</a>.
 Download the one for your computer:</p>
 <table>
   <tr><th>Your computer</th><th>Download the file ending in</th></tr>
@@ -610,7 +610,7 @@ computer asks you to confirm once before running each one.</p>
     administrator password. Near the end it sits still for a few minutes
     while it prepares the app; notifications show it is still working.</li>
   <li>Open the app: press <span class="ui">Command-Space</span>, type
-    Wikipedia Wrapped, and press Return. It is also in the
+    WikiWrapped, and press Return. It is also in the
     <span class="ui">Applications</span> folder inside your home folder (in
     Finder, <span class="ui">Go &gt; Home</span>); drag it to the Dock to
     keep it there.</li>
@@ -656,13 +656,13 @@ again later picks up where you left off.</p>
 <ul>
   <li><strong>Mac:</strong> quit the app, open Terminal (in
     <span class="ui">Applications &gt; Utilities</span>), and run<br>
-    <code>bash ~/Library/WikipediaWrapped-App/uninstall.sh</code><br>
-    It removes the program (<code>~/Library/WikipediaWrapped-App</code>)
+    <code>bash ~/Library/WikiWrapped-App/uninstall.sh</code><br>
+    It removes the program (<code>~/Library/WikiWrapped-App</code>)
     and the app in your Applications folder. Dragging the app to the Trash
     is not enough: it leaves the program folder, about 2 GB, behind.</li>
   <li><strong>Windows:</strong> open <span class="ui">Settings &gt; Apps
     &gt; Installed apps</span> (on Windows 10, <span class="ui">Apps &amp;
-    features</span>), find <span class="ui">Wikipedia Wrapped</span>, and
+    features</span>), find <span class="ui">WikiWrapped</span>, and
     choose <span class="ui">Uninstall</span>.</li>
 </ul>
 <p>To remove your data as well, delete the data folder
@@ -670,7 +670,7 @@ again later picks up where you left off.</p>
 <code>data/visits.jsonl</code> somewhere safe if you might want it. On a
 Mac, in Finder choose <span class="ui">Go &gt; Go to Folder</span> and
 paste the folder's path; on Windows, paste
-<code>%APPDATA%\WikipediaWrapped</code> into File Explorer's address
+<code>%APPDATA%\WikiWrapped</code> into File Explorer's address
 bar.</p>
 <p>If you used the <a href="#advanced">Advanced option</a>, also remove the
 app's access to your Google account in your Google Account's third-party

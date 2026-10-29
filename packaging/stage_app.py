@@ -3,19 +3,19 @@
     python packaging/stage_app.py                  # into $PREFIX (rattler-build)
     python packaging/stage_app.py --prefix DIR     # anywhere, to inspect
 
-Run by packaging/recipe/recipe.yaml while building the `wikipedia-wrapped`
+Run by packaging/recipe/recipe.yaml while building the `wikiwrapped`
 conda package; it reads the repo directly (from beside this file), so the
 recipe needs no copy of the source. What it puts under <prefix>:
 
-    share/wikipedia-wrapped/          the code folder: config.PROJECT_ROOT
+    share/wikiwrapped/          the code folder: config.PROJECT_ROOT
                                       once installed
         launch.py                     what the shortcuts run (packaging/launch.py)
         config.py, app/, extract/     the app, without bytecode caches
         scripts/enrich_pending.py     the one script the app runs itself
                                       (the enrichment job, app/jobs.py)
-    Menu/wikipedia-wrapped.json       the shortcut definition for menuinst,
+    Menu/wikiwrapped.json       the shortcut definition for menuinst,
                                       with the version filled in
-    Menu/wikipedia-wrapped.icns/.ico  its icons (packaging/icon/make_icons.py)
+    Menu/wikiwrapped.icns/.ico  its icons (packaging/icon/make_icons.py)
 
 The files are listed explicitly rather than "the repo minus some things",
 so a new file in the checkout (notes, data, a token) can never end up in
@@ -24,7 +24,7 @@ an installer by accident.
 Not in the package: the bundled model and reference space. They are large,
 are not built from this repo, and reach the installer through constructor's
 extra_files instead (packaging/installer/construct.yaml), into
-share/wikipedia-wrapped/resources/, the folder config.installed_resource_dir()
+share/wikiwrapped/resources/, the folder config.installed_resource_dir()
 looks for.
 """
 
@@ -38,9 +38,9 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-CODE_DIR = Path("share") / "wikipedia-wrapped"
+CODE_DIR = Path("share") / "wikiwrapped"
 MENU_DIR = Path("Menu")
-MENU_NAME = "wikipedia-wrapped"
+MENU_NAME = "wikiwrapped"
 
 # (source in the repo, destination under the code folder)
 FILES = [
@@ -101,7 +101,7 @@ def main(argv=None) -> int:
     if package_version and package_version != version:
         raise SystemExit(f"Package version {package_version} != config.APP_VERSION {version}")
     stage(Path(args.prefix), version, args.icons)
-    print(f"Staged Wikipedia Wrapped {version} into {args.prefix}")
+    print(f"Staged WikiWrapped {version} into {args.prefix}")
     return 0
 
 

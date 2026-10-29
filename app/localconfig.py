@@ -167,7 +167,7 @@ def save(settings: dict, path: str | Path | None = None) -> Path:
     path = Path(path or config.LOCAL_CONFIG_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        "# Local settings for Wikipedia Wrapped (per-user, never in git).\n"
+        "# Local settings for WikiWrapped (per-user, never in git).\n"
         "# Written by the app's setup; safe to edit by hand.\n\n"
     )
     path.write_text(header + _emit(settings), encoding="utf-8")

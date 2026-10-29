@@ -1,4 +1,4 @@
-# Wikipedia Wrapped — Build Specification
+# WikiWrapped — Build Specification
 
 **Purpose of this document.** This is a starting brief for Claude Code to scaffold a new, standalone repository. It resolves the key design decisions so the agent does not have to guess. It is intentionally opinionated: where a choice was made, it is stated as a requirement, not an option. Prior exploratory scripts exist and can be read for reference/logic, but **this is a fresh repo** — do not attempt to make the old scripts "work"; port their logic into clean modules.
 
@@ -79,7 +79,7 @@ These were decided deliberately. Do not deviate without flagging.
 ## 4. Suggested repo layout
 
 ```
-wikipedia-wrapped/
+wikiwrapped/
 ├── environment.yml
 ├── README.md
 ├── config.py                 # paths, API user-agent, date-range defaults
@@ -209,13 +209,13 @@ Functions return **data structures, not matplotlib figures** (plotting happens i
 ```
 POST https://api.wikimedia.org/service/lw/inference/v1/models/outlink-topic-model:predict
 Content-Type: application/json
-Api-User-Agent: WikipediaWrapped/0.1 (https://github.com/emers245/wikipedia-wrapped)
+Api-User-Agent: WikiWrapped/0.1 (https://github.com/emers245/wikiwrapped)
 
 {"page_title": "Douglas_Adams", "lang": "en"}
 ```
 - Title-based; **no revision-ID lookup needed** — delete the old `titles_to_revids` step.
 - It is an *outlink*-based model, so labels differ slightly from the old text-based `articletopic`; the topic taxonomy (WikiProject scheme) is the same, so `macro()` still applies.
-- **Set a real `Api-User-Agent` header with contact information** — Wikimedia enforces this. **Amended 2026-10-24:** the header identifies the project, `WikipediaWrapped/<version> (https://github.com/emers245/wikipedia-wrapped)`, which Wikimedia's policy accepts (a URL or an email); no user has to supply a personal address. An optional `WIKIPEDIA_WRAPPED_EMAIL` is appended when set.
+- **Set a real `Api-User-Agent` header with contact information** — Wikimedia enforces this. **Amended 2026-10-24:** the header identifies the project, `WikiWrapped/<version> (https://github.com/emers245/wikiwrapped)`, which Wikimedia's policy accepts (a URL or an email); no user has to supply a personal address. An optional `WIKIPEDIA_WRAPPED_EMAIL` is appended when set.
 - Anonymous rate limit ≈ 50,000 requests/hour per IP (no auth token needed for personal use). Batch politely; back off on HTTP 429.
 
 **Pageviews REST API** (per-article, cheaper than raw dumps for this use):

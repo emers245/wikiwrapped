@@ -168,7 +168,7 @@ window.WWsetup = (function () {
 
   function sectionWelcome() {
     return el("div", { class: "setup-section" },
-      el("p", {}, "Wikipedia Wrapped shows what you have been reading on " +
+      el("p", {}, "WikiWrapped shows what you have been reading on " +
         "Wikipedia: a map of the topics, the paths between articles, and " +
         "when you read them."),
       el("h3", {}, "Your data stay on this computer"),
@@ -245,7 +245,7 @@ window.WWsetup = (function () {
 
   function sectionProfiles() {
     const section = el("div", { class: "setup-section" },
-      el("p", {}, "Wikipedia Wrapped reads Google Chrome's history on this " +
+      el("p", {}, "WikiWrapped reads Google Chrome's history on this " +
         "computer. Chrome keeps about 90 days of history, so the app saves " +
         "a copy of the Wikipedia visits each time it syncs."));
     if (mode === "settings") {
@@ -592,7 +592,7 @@ window.WWsetup = (function () {
   /* -- steps and rendering -------------------------------------------------- */
 
   const STEPS = [
-    { title: "Welcome to Wikipedia Wrapped", build: sectionWelcome, wizardOnly: true },
+    { title: "Welcome to WikiWrapped", build: sectionWelcome, wizardOnly: true },
     { title: "Browser history", build: sectionProfiles },
     { title: "Google Takeout (optional)", build: sectionFolders },
     { title: "Advanced: Google Drive sign-in", build: sectionAdvanced },

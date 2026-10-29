@@ -2,7 +2,7 @@
 # never mix with the app's runtime or dev dependencies.
 #
 #   conda env create -f packaging/build-tools.yml
-#   conda run -n wikipedia-wrapped-build conda-lock --help
+#   conda run -n wikiwrapped-build conda-lock --help
 #
 # conda-lock    solves packaging/runtime.yml for every target platform and
 #               writes explicit, hash-pinned lock files (Milestone 1).
@@ -21,7 +21,7 @@
 #
 # Pinned to the versions the build was developed against (2026-10-24). Bump
 # deliberately: each is a tool whose output format matters.
-name: wikipedia-wrapped-build
+name: wikiwrapped-build
 channels:
   - conda-forge
   - nodefaults

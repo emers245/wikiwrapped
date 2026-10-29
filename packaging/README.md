@@ -17,8 +17,8 @@ itself (Milestone 3), and the GitHub Actions builds and draft releases
 
 All commands run from the repo root. The build tools (constructor,
 rattler-build, conda-lock, `gh`, ...) live in their own environment,
-`wikipedia-wrapped-build`; the scripts that fetch or build resources run
-in the dev environment, `wikipedia-wrapped`.
+`wikiwrapped-build`; the scripts that fetch or build resources run
+in the dev environment, `wikiwrapped`.
 
 ## The pieces
 
@@ -36,7 +36,7 @@ in the dev environment, `wikipedia-wrapped`.
 | `installer/macos/`, `installer/windows/` | The scripts the installers run, the macOS uninstaller, the macOS installer texts. |
 | `recipe/recipe.yaml`, `stage_app.py` | The app's own code as a small conda package. |
 | `launch.py` | What the shortcuts run: installed-mode setup, then `app.launcher`. |
-| `menu/wikipedia-wrapped.json` | The shortcut definition (menuinst). |
+| `menu/wikiwrapped.json` | The shortcut definition (menuinst). |
 | `icon/icon.png`, `icon/make_icons.py` | The icon source and its conversion to `.icns` / `.ico`. |
 | `test_install_macos.py` | Installs a built `.pkg` into a scratch folder, tests it, uninstalls it. |
 | `release_version.py` | The version being built; refuses a git tag that does not match it. |
@@ -93,14 +93,14 @@ conda env create -f packaging/build-tools.yml
 2. Re-lock conda, then the wheels:
 
    ```bash
-   conda run -n wikipedia-wrapped-build conda-lock lock \
+   conda run -n wikiwrapped-build conda-lock lock \
        -f packaging/runtime.yml -p osx-64 -p osx-arm64 -p win-64 \
        --kind explicit --filename-template 'packaging/locks/{platform}.txt'
-   conda run -n wikipedia-wrapped-build python packaging/lock_wheels.py
+   conda run -n wikiwrapped-build python packaging/lock_wheels.py
    ```
 
 3. Recreate the dev environment, so it has the new versions:
-   `conda env remove -n wikipedia-wrapped && conda env create -f environment.yml`.
+   `conda env remove -n wikiwrapped && conda env create -f environment.yml`.
 4. `pytest`. With a pickle-cluster change, expect the anchor test to fail
    until step 5 is done.
 5. If the change was of kind 1 or 2, [rebuild the reference
@@ -211,7 +211,7 @@ a pickle, and loading a pickle runs code.
 
 `gh` comes with the build-tools environment. Log in once, in a terminal
 (it asks questions, which `conda run` cannot pass on):
-`conda activate wikipedia-wrapped-build && gh auth login`. The `gh`
+`conda activate wikiwrapped-build && gh auth login`. The `gh`
 commands below then work in that environment.
 
 ### The current anchor: `reference-v1`
@@ -230,15 +230,15 @@ build's caches). Use the next free tag number; `v2` below. In the dev
 environment:
 
 ```bash
-conda activate wikipedia-wrapped
+conda activate wikiwrapped
 cp -R data/reference data/reference-previous     # optional: keep the old one
 python scripts/fetch_model.py                    # the pinned model, verified
 python scripts/build_reference_space.py          # 30,000 top + 10,000 random
 python scripts/package_reference_space.py --tag reference-v2
-gh release create reference-v2 --repo emers245/wikipedia-wrapped \
+gh release create reference-v2 --repo emers245/wikiwrapped \
     --title "Reference space v2" --prerelease --notes "What changed and why"
 gh release upload reference-v2 packaging/build/reference-space-v2.tar.gz \
-    --repo emers245/wikipedia-wrapped
+    --repo emers245/wikiwrapped
 python scripts/fetch_reference_space.py          # round trip from the release
 git add packaging/reference-space.json && git commit -m "Reference space v2"
 ```
@@ -287,15 +287,15 @@ model revision or the embedding stack changes on purpose.
 Installers are built on the platform they are for. On the Intel Mac:
 
 ```bash
-conda env update -n wikipedia-wrapped-build -f packaging/build-tools.yml  # once (adds pillow)
-conda activate wikipedia-wrapped
+conda env update -n wikiwrapped-build -f packaging/build-tools.yml  # once (adds pillow)
+conda activate wikiwrapped
 python scripts/fetch_model.py --dest packaging/build/resources
 python scripts/fetch_reference_space.py
-conda run -n wikipedia-wrapped-build python packaging/build_installer.py
+conda run -n wikiwrapped-build python packaging/build_installer.py
 ```
 
 The installer lands in `packaging/build/dist/` with a `.sha256` beside it:
-`WikipediaWrapped-<version>-macOS-Intel.pkg`, `...-macOS-AppleSilicon.pkg`
+`WikiWrapped-<version>-macOS-Intel.pkg`, `...-macOS-AppleSilicon.pkg`
 or `...-Windows-x64.exe`. A build takes about 10 minutes and leaves about
 3 GB of downloads and caches under `packaging/build/` (git-ignored; delete
 it freely, the next build downloads again).
@@ -310,21 +310,21 @@ constructor.
 
 | | macOS | Windows |
 |---|---|---|
-| Program | `~/Library/WikipediaWrapped-App/v<version>/` | `%LOCALAPPDATA%\WikipediaWrapped-App\v<version>\` |
-| Shortcut | `~/Applications/Wikipedia Wrapped.app` | Start menu and desktop, "Wikipedia Wrapped" |
-| User data (never touched) | `~/Library/Application Support/WikipediaWrapped/` | `%APPDATA%\WikipediaWrapped\` |
-| Uninstall | `bash ~/Library/WikipediaWrapped-App/uninstall.sh` | Settings > Apps > Installed apps |
+| Program | `~/Library/WikiWrapped-App/v<version>/` | `%LOCALAPPDATA%\WikiWrapped-App\v<version>\` |
+| Shortcut | `~/Applications/WikiWrapped.app` | Start menu and desktop, "WikiWrapped" |
+| User data (never touched) | `~/Library/Application Support/WikiWrapped/` | `%APPDATA%\WikiWrapped\` |
+| Uninstall | `bash ~/Library/WikiWrapped-App/uninstall.sh` | Settings > Apps > Installed apps |
 | Admin rights | never | never ("Just Me", the default) |
 
 Inside the program folder, a complete conda environment, plus:
 
 ```
-share/wikipedia-wrapped/          the app's code (config.PROJECT_ROOT)
+share/wikiwrapped/          the app's code (config.PROJECT_ROOT)
     launch.py                     what the shortcut runs
     config.py  app/  extract/  scripts/enrich_pending.py
     resources/models/all-MiniLM-L6-v2/    the bundled model
     resources/reference/                  the reference space
-Menu/wikipedia-wrapped.json       the shortcut definition, and its icons
+Menu/wikiwrapped.json       the shortcut definition, and its icons
 ```
 
 The `resources` folder next to the code is what switches the app into
@@ -360,7 +360,7 @@ large, built elsewhere, and verified separately.
   (`app/jobs.py`).
 - **macOS Dock**: the shortcut runs Python through a link inside the
   `.app` (menuinst's `link_in_bundle`), which is what makes the Dock show
-  "Wikipedia Wrapped" and its icon rather than "python3.11".
+  "WikiWrapped" and its icon rather than "python3.11".
 
 ### Upgrades and uninstalling
 
@@ -385,8 +385,8 @@ Reinstalling the *same* version is refused (its folder exists): uninstall
 first. Downgrading works like upgrading.
 
 Removing user data as well, after uninstalling:
-`rm -rf ~/Library/Application\ Support/WikipediaWrapped` on macOS, and
-the `%APPDATA%\WikipediaWrapped` folder on Windows.
+`rm -rf ~/Library/Application\ Support/WikiWrapped` on macOS, and
+the `%APPDATA%\WikiWrapped` folder on Windows.
 
 ### Platform limits
 
@@ -408,11 +408,11 @@ the `%APPDATA%\WikipediaWrapped` folder on Windows.
 ### The self-test
 
 ```bash
-~/Library/WikipediaWrapped-App/v0.1.0/bin/python \
-    ~/Library/WikipediaWrapped-App/v0.1.0/share/wikipedia-wrapped/launch.py --self-test
+~/Library/WikiWrapped-App/v0.1.0/bin/python \
+    ~/Library/WikiWrapped-App/v0.1.0/share/wikiwrapped/launch.py --self-test
 ```
 
-(on Windows: `<install folder>\python.exe <install folder>\share\wikipedia-wrapped\launch.py --self-test`;
+(on Windows: `<install folder>\python.exe <install folder>\share\wikiwrapped\launch.py --self-test`;
 in a checkout, `python -m app.launcher --self-test`). Headless; exits 0 or
 1. It checks the imports, the resources against their manifests and the
 runtime's versions, the model loading with networking blocked and
@@ -423,8 +423,8 @@ interpreter, and that nothing was written into the install folder.
 ### Testing an installer without installing it for real
 
 ```bash
-conda run -n wikipedia-wrapped-build python packaging/test_install_macos.py \
-    packaging/build/dist/WikipediaWrapped-0.1.0-macOS-Intel.pkg \
+conda run -n wikiwrapped-build python packaging/test_install_macos.py \
+    packaging/build/dist/WikiWrapped-0.1.0-macOS-Intel.pkg \
     --scratch /tmp/ww-install-test
 ```
 
@@ -446,18 +446,18 @@ macOS quarantines it like a user's download:
    no password prompt. It sits near the end for a few minutes (installing,
    then preparing the libraries); notifications report progress.
 3. The last page says how to open the app. Press Command-Space, type
-   Wikipedia Wrapped, press Return. The window should appear within a few
-   seconds, and the Dock should show the app's icon and "Wikipedia
-   Wrapped" (not "python").
+   WikiWrapped, press Return. The window should appear within a few
+   seconds, and the Dock should show the app's icon and "WikiWrapped"
+   (not "python").
 4. Go through the first-run setup and let the first sync finish. Check
    Help opens, with its screenshots.
 5. Quit (Command-Q), relaunch: no setup screens, your data are there.
 6. Upgrade: set `APP_VERSION` to `0.1.1` locally (do not commit), build
    again, install over 0.1.0. One `v0.1.1` folder remains in
-   `~/Library/WikipediaWrapped-App`, the app opens on your data, and
+   `~/Library/WikiWrapped-App`, the app opens on your data, and
    `--self-test` passes. Put the version back.
-7. Uninstall: `bash ~/Library/WikipediaWrapped-App/uninstall.sh`. The app
-   and its folder are gone; `~/Library/Application Support/WikipediaWrapped`
+7. Uninstall: `bash ~/Library/WikiWrapped-App/uninstall.sh`. The app
+   and its folder are gone; `~/Library/Application Support/WikiWrapped`
    is still there.
 
 ### The icon
@@ -468,7 +468,7 @@ trimmed to the drawing and centered on a rounded square of the same blue,
 the shape of a macOS app icon. After changing the logo, redo it with
 
 ```bash
-conda run -n wikipedia-wrapped-build python packaging/icon/make_icons.py \
+conda run -n wikiwrapped-build python packaging/icon/make_icons.py \
     --compose app/static/logo/WikiWrapped_Logo_v2.png --plate "#286bb1"
 ```
 
@@ -496,9 +496,9 @@ GitHub's runners, one job each:
 
 | Job | Runner | Installer |
 |---|---|---|
-| macOS Apple Silicon | `macos-15` | `WikipediaWrapped-<version>-macOS-AppleSilicon.pkg` |
-| macOS Intel | `macos-15-intel` | `WikipediaWrapped-<version>-macOS-Intel.pkg` |
-| Windows x64 | `windows-2025` | `WikipediaWrapped-<version>-Windows-x64.exe` |
+| macOS Apple Silicon | `macos-15` | `WikiWrapped-<version>-macOS-AppleSilicon.pkg` |
+| macOS Intel | `macos-15-intel` | `WikiWrapped-<version>-macOS-Intel.pkg` |
+| Windows x64 | `windows-2025` | `WikiWrapped-<version>-Windows-x64.exe` |
 
 `macos-15-intel` is GitHub's last Intel macOS runner; GitHub supports
 Intel macOS until the macOS 15 image retires in fall 2027. After that,

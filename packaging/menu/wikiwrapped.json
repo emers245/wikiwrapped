@@ -1,35 +1,35 @@
 {
   "$schema": "https://schemas.conda.org/menuinst-1-1-3.schema.json",
-  "menu_name": "Wikipedia Wrapped",
+  "menu_name": "WikiWrapped",
   "menu_items": [
     {
-      "name": "Wikipedia Wrapped",
+      "name": "WikiWrapped",
       "description": "Your Wikipedia reading history, mapped and summarized.",
-      "icon": "{{ MENU_DIR }}/wikipedia-wrapped.{{ ICON_EXT }}",
+      "icon": "{{ MENU_DIR }}/wikiwrapped.{{ ICON_EXT }}",
       "activate": false,
       "terminal": false,
-      "command": ["{{ PYTHON }}", "{{ PREFIX }}/share/wikipedia-wrapped/launch.py"],
+      "command": ["{{ PYTHON }}", "{{ PREFIX }}/share/wikiwrapped/launch.py"],
       "platforms": {
         "osx": {
           "command": [
             "{{ MENU_ITEM_LOCATION }}/Contents/MacOS/python",
-            "{{ PREFIX }}/share/wikipedia-wrapped/launch.py"
+            "{{ PREFIX }}/share/wikiwrapped/launch.py"
           ],
           "link_in_bundle": {
             "{{ PREFIX }}/bin/python": "{{ MENU_ITEM_LOCATION }}/Contents/MacOS/python"
           },
-          "CFBundleName": "WikipediaWrapped",
-          "CFBundleDisplayName": "Wikipedia Wrapped",
-          "CFBundleIdentifier": "io.github.emers245.wikipediawrapped",
+          "CFBundleName": "WikiWrapped",
+          "CFBundleDisplayName": "WikiWrapped",
+          "CFBundleIdentifier": "io.github.emers245.wikiwrapped",
           "CFBundleVersion": "@VERSION@"
         },
         "win": {
           "command": [
             "{{ PYTHONW }}",
-            "{{ PREFIX }}/share/wikipedia-wrapped/launch.py"
+            "{{ PREFIX }}/share/wikiwrapped/launch.py"
           ],
           "desktop": true,
-          "app_user_model_id": "emers245.WikipediaWrapped"
+          "app_user_model_id": "emers245.WikiWrapped"
         }
       }
     }

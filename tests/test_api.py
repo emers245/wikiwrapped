@@ -157,7 +157,7 @@ def test_page_detail_and_underscore_form(client):
 def test_index_serves_frontend(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert "Wikipedia Wrapped" in response.text
+    assert "WikiWrapped" in response.text
     assert client.get("/static/main.js").status_code == 200
 
 

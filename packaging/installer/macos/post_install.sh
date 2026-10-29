@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs inside the macOS installer once the packages and the shortcut are
 # installed into this version's folder ($PREFIX, for example
-# ~/Library/WikipediaWrapped-App/v0.1.0). Runs as the user, never as root.
+# ~/Library/WikiWrapped-App/v0.1.0). Runs as the user, never as root.
 # Any failure here fails the installation, with this output in the
 # installer log (Window > Installer Log).
 
@@ -26,7 +26,7 @@ rm -rf "$PREFIX/wheels"
 #    install folder at runtime (packaging/launch.py), so this is the only
 #    chance, and it makes every launch start a little faster.
 echo "Compiling the app"
-"$PY" -m compileall -q -j 0 "$PREFIX/share/wikipedia-wrapped" > /dev/null
+"$PY" -m compileall -q -j 0 "$PREFIX/share/wikiwrapped" > /dev/null
 
 # 3. Load every library once. The first time any program loads a newly
 #    installed library, macOS checks it, and for this app's few hundred
@@ -40,7 +40,7 @@ echo "Compiling the app"
 #    the app works is what `launch.py --self-test` checks).
 echo "Preparing the app's libraries for their first use (a minute or two)"
 WARMUP_CACHE="$(mktemp -d)"
-(cd "$PREFIX/share/wikipedia-wrapped" && NUMBA_CACHE_DIR="$WARMUP_CACHE" \
+(cd "$PREFIX/share/wikiwrapped" && NUMBA_CACHE_DIR="$WARMUP_CACHE" \
     "$PY" -B -c "from app.selftest import check_imports; check_imports()") \
     || echo "Warning: could not preload the libraries; the first launch will be slower."
 rm -rf "$WARMUP_CACHE"
@@ -55,7 +55,7 @@ chmod +x "$INSTALL_ROOT/uninstall.sh"
 #    this app are touched, and user data never live in here.
 for old in "$INSTALL_ROOT"/v*; do
     [[ -d "$old" && "$old" != "$PREFIX" ]] || continue
-    if compgen -G "$old/conda-meta/wikipedia-wrapped-*.json" > /dev/null; then
+    if compgen -G "$old/conda-meta/wikiwrapped-*.json" > /dev/null; then
         echo "Removing the previous version: $old"
         rm -rf "$old"
     fi

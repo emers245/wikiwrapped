@@ -2,7 +2,7 @@
   "articles": 39794,
   "asset": "reference-space-v1.tar.gz",
   "embedding_model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-  "repo": "emers245/wikipedia-wrapped",
+  "repo": "emers245/wikiwrapped",
   "sha256": "53d758a8252abc25e28eb3f60c42da8be7801cdcfddffbc12192f5edb15e5b65",
   "size": 212247353,
   "tag": "reference-v1",
