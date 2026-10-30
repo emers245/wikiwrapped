@@ -1,4 +1,7 @@
-# WikiWrapped
+<div align="center">
+  <img src="packaging/icon/icon.png" alt="Project Logo" width="150" height="150" />
+  <h1>WikiWrapped</h1>
+</div>
 
 WikiWrapped shows what you have been reading on Wikipedia: a map of
 the topics you read about, the paths you took from one article to the
@@ -147,8 +150,8 @@ in [packaging/README.md](packaging/README.md).
 
 # Why and how I built the app
 
-This is a passion project. I wanted to develop some code I had written to analyze my Wikipedia reading history that I had original written in 2024. I used this as an opportunity to teach myself how to use coding agents. I used Claude Opus 5.5 and Claude Fable extensively to develop interactive visualizations, create a graphical user interface, and build the application machinery.
+This is a passion project. I wanted to develop some code I had written to analyze my Wikipedia reading history that I had originally written in 2024. I used this as an opportunity to teach myself how to use coding agents. I used Claude Opus 5.5 and Claude Fable extensively to develop interactive visualizations, create a graphical user interface, and build the application machinery.
 
 # DISCLAIMER
 
-This projecg is not affiliated with or endorsed by the Wikimedia Foundation; Wikipedia is a trademark of the Wikimedia Foundation.
+This project is not affiliated with or endorsed by the Wikimedia Foundation; Wikipedia is a trademark of the Wikimedia Foundation.
